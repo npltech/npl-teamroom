@@ -1,0 +1,245 @@
+import { useOutletContext } from 'react-router-dom';
+import { ROLE_LABEL, type Role } from '../data/roles';
+import { StatCard, LedgerPanel, LedgerRow } from '../components/Ledger';
+import { RosterStrip } from '../components/RosterStrip';
+import { AttendanceDonut } from '../components/AttendanceDonut';
+import { UpcomingHolidays } from '../components/UpcomingHolidays';
+import { UpcomingEvents } from '../components/UpcomingEvents';
+import { QuickLinks } from '../components/QuickLinks';
+import { useEmployees } from '../data/employees';
+import { useUpcomingEvents } from '../data/events';
+import { useCurrentEmployee } from '../data/currentUser';
+import { useTasks } from '../data/tasks';
+
+type Ctx = { role: Role };
+
+function SuperAdminDashboard() {
+  const { employees } = useEmployees();
+  const events = useUpcomingEvents(employees);
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Users" value={142} status="structure" />
+        <StatCard label="Employees" value={118} status="present" />
+        <StatCard label="Departments" value={9} status="structure" />
+        <StatCard label="Active users (24h)" value={87} status="present" />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <LedgerPanel title="Organization attendance — today">
+          <div className="px-5 py-5">
+            <AttendanceDonut
+              centerLabel="Employees"
+              segments={[
+                { label: 'Present', value: 98, color: 'var(--status-present)' },
+                { label: 'On leave', value: 14, color: 'var(--status-pending)' },
+                { label: 'Absent', value: 6, color: 'var(--status-absent)' },
+              ]}
+            />
+          </div>
+        </LedgerPanel>
+        <UpcomingHolidays canManage />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <LedgerPanel title="Recently added users">
+          <LedgerRow primary="Meera Nair" secondary="HR · Finance dept" meta="Today" status="present" />
+          <LedgerRow primary="Arjun Sinha" secondary="Employee · Engineering" meta="Yesterday" status="present" />
+          <LedgerRow primary="Kabir Shah" secondary="Manager · Sales" meta="2 days ago" status="pending" />
+        </LedgerPanel>
+        <UpcomingEvents events={events} />
+      </div>
+    </>
+  );
+}
+
+function HRDashboard() {
+  const { employees } = useEmployees();
+  const events = useUpcomingEvents(employees);
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Employees" value={118} status="present" />
+        <StatCard label="Open jobs" value={6} status="structure" />
+        <StatCard label="Candidates" value={34} status="pending" />
+        <StatCard label="New joiners (mtd)" value={5} status="present" />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <LedgerPanel title="Attendance — today">
+          <div className="px-5 py-5">
+            <AttendanceDonut
+              centerLabel="Employees"
+              segments={[
+                { label: 'Present', value: 98, color: 'var(--status-present)' },
+                { label: 'On leave', value: 14, color: 'var(--status-pending)' },
+                { label: 'Absent', value: 6, color: 'var(--status-absent)' },
+              ]}
+            />
+          </div>
+        </LedgerPanel>
+        <UpcomingHolidays canManage />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <LedgerPanel title="Onboarding in progress">
+          <LedgerRow primary="Priya Das" secondary="Design — offer letter sent" status="pending" />
+          <LedgerRow primary="Rohan Verma" secondary="Engineering — IT setup" status="pending" />
+          <LedgerRow primary="Sana Iqbal" secondary="Marketing — completed" status="present" />
+        </LedgerPanel>
+        <LedgerPanel title="Leave requests">
+          <LedgerRow primary="Anita Rao" secondary="Sick leave · 2 days" meta="Pending" status="pending" />
+          <LedgerRow primary="Vikram Joshi" secondary="Annual leave · 5 days" meta="Approved" status="present" />
+          <LedgerRow primary="Farah Khan" secondary="Casual leave · 1 day" meta="Rejected" status="absent" />
+        </LedgerPanel>
+      </div>
+
+      <div className="mt-6">
+        <UpcomingEvents events={events} />
+      </div>
+    </>
+  );
+}
+
+function ManagerDashboard() {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <StatCard label="Team members" value={12} status="structure" />
+        <StatCard label="Present" value={9} status="present" />
+        <StatCard label="Absent" value={1} status="absent" />
+        <StatCard label="On leave" value={2} status="pending" />
+        <StatCard label="Open tasks" value={7} status="structure" />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <LedgerPanel title="Team attendance — today">
+          <div className="px-5 py-5">
+            <AttendanceDonut
+              centerLabel="Team"
+              segments={[
+                { label: 'Present', value: 9, color: 'var(--status-present)' },
+                { label: 'On leave', value: 2, color: 'var(--status-pending)' },
+                { label: 'Absent', value: 1, color: 'var(--status-absent)' },
+              ]}
+            />
+          </div>
+        </LedgerPanel>
+        <UpcomingHolidays />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <LedgerPanel title="Team — today">
+          <LedgerRow primary="Devika Shetty" secondary="Office" meta="09:04" status="present" />
+          <LedgerRow primary="Imran Qureshi" secondary="WFH" meta="09:21" status="present" />
+          <LedgerRow primary="Neha Bhatt" secondary="Annual leave" status="pending" />
+          <LedgerRow primary="Sameer Ali" secondary="No check-in" status="absent" />
+        </LedgerPanel>
+        <LedgerPanel title="Leave approvals">
+          <LedgerRow primary="Neha Bhatt" secondary="Annual · 3 days" meta="Awaiting" status="pending" />
+          <LedgerRow primary="Devika Shetty" secondary="Sick · 1 day" meta="Awaiting" status="pending" />
+        </LedgerPanel>
+      </div>
+
+      <div className="mt-6">
+        <QuickLinks
+          links={[
+            { label: 'Approve leave', path: '/leave' },
+            { label: 'Team attendance', path: '/attendance' },
+            { label: 'Org chart', path: '/org-chart' },
+          ]}
+        />
+      </div>
+    </>
+  );
+}
+
+function EmployeeDashboard({ role }: { role: Role }) {
+  const { employees } = useEmployees();
+  const events = useUpcomingEvents(employees, 3);
+  const employee = useCurrentEmployee(role);
+  const { tasks } = useTasks();
+  const myTasks = employee ? tasks.filter((t) => t.assigned_to === employee.id).slice(0, 4) : [];
+  const openCount = myTasks.filter((t) => t.status !== 'COMPLETED').length;
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Today" value="Checked in" status="present" />
+        <StatCard label="Work mode" value="WFH" status="structure" />
+        <StatCard label="Leave balance" value="14 days" status="present" />
+        <StatCard label="Open tasks" value={openCount} status="pending" />
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr_1fr]">
+        <LedgerPanel title="My tasks">
+          {myTasks.length === 0 ? (
+            <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+              No tasks assigned right now.
+            </p>
+          ) : (
+            myTasks.map((t) => (
+              <LedgerRow
+                key={t.id}
+                primary={t.title}
+                secondary={t.status === 'COMPLETED' ? 'Completed' : `Due ${t.due_date}`}
+                status={t.status === 'COMPLETED' ? 'present' : t.status === 'IN_PROGRESS' ? 'pending' : 'neutral'}
+              />
+            ))
+          )}
+        </LedgerPanel>
+        <div
+          className="border p-5"
+          style={{ background: 'var(--ink)', borderColor: 'var(--ink)', borderRadius: 'var(--radius-md)' }}
+        >
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-on-ink)' }}>
+            Today's register
+          </h3>
+          <div className="mt-4">
+            <RosterStrip
+              events={[
+                { time: '09:12', label: 'Checked in — WFH', status: 'present' },
+                { time: '13:00', label: 'Break', status: 'neutral' },
+                { time: '13:32', label: 'Resumed', status: 'present' },
+              ]}
+            />
+          </div>
+        </div>
+        <UpcomingHolidays />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <QuickLinks
+          links={[
+            { label: 'Apply leave', path: '/leave' },
+            { label: 'Regularize attendance', path: '/attendance' },
+            { label: 'Log task time', path: '/tasks' },
+          ]}
+        />
+        <UpcomingEvents events={events} />
+      </div>
+    </>
+  );
+}
+
+export default function DashboardPage() {
+  const { role } = useOutletContext<Ctx>();
+
+  const view = {
+    SUPER_ADMIN: <SuperAdminDashboard />,
+    HR: <HRDashboard />,
+    MANAGER: <ManagerDashboard />,
+    EMPLOYEE: <EmployeeDashboard role={role} />,
+  }[role];
+
+  return (
+    <div>
+      <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--status-present)' }}>
+        {ROLE_LABEL[role]} dashboard
+      </p>
+      <h1 className="font-display mt-1 text-2xl font-semibold" style={{ color: 'var(--ink)' }}>
+        Good morning.
+      </h1>
+      <div className="mt-6">{view}</div>
+    </div>
+  );
+}

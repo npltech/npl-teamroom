@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+/* =========================================================
+   ROSTER — design tokens
+   A ledger / register aesthetic for workforce management.
+   Status is communicated by colour + a left-edge tick bar,
+   never by rounded pill badges. Hairlines, not shadows.
+   ========================================================= */
+
+:root {
+  /* --- Core palette (Professional HR SaaS) --- */
+  --ink: #17212B;
+  /* sidebar background */
+  --ink-soft: #202A38;
+  /* raised surfaces on dark (hover rows, active nav) */
+  --paper: #F7F8FA;
+  /* app background */
+  --surface: #FFFFFF;
+  /* card / panel surface */
+  --line: #E5E7EB;
+  /* hairline dividers */
+  --line-soft: #F3F4F6;
+  /* lighter hairline, on paper */
+
+  /* --- Text --- */
+  --text-primary: #17212B;
+  --text-secondary: #667085;
+  --text-muted: #98A2B3;
+  --text-on-ink: #FFFFFF;
+  --text-on-ink-muted: #A8B5C5;
+
+  /* --- Functional colors --- */
+  --primary: #635BFF;
+  /* primary action color */
+  --primary-bg: #F3F1FF;
+  --status-present: #12B76A;
+  /* success — present / active / approved */
+  --status-present-bg: #ECFDF5;
+  --status-pending: #F79009;
+  /* warning — pending / on leave */
+  --status-pending-bg: #FFFAED;
+  --status-absent: #D92D20;
+  /* danger — absent / rejected */
+  --status-absent-bg: #FEF3F2;
+  --status-neutral: #667085;
+  /* slate — inactive / info */
+  --status-neutral-bg: #F3F4F6;
+
+  /* --- Extra accents --- */
+  --accent-structure: #635BFF;
+  /* primary accent for org structure */
+  --accent-structure-bg: #F3F1FF;
+  --accent-holiday: #635BFF;
+  /* primary accent for holidays */
+  --accent-holiday-bg: #F3F1FF;
+
+  /* --- Type --- */
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* --- Radii: deliberately small. This is a register, not a bubble UI --- */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.font-mono,
+code,
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible keyboard focus everywhere - no exceptions */
+:focus-visible {
+  outline: 2px solid var(--status-present);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+::selection {
+  background: var(--status-present);
+  color: var(--text-on-ink);
+}
