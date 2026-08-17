@@ -1,9 +1,51 @@
 import { Link } from 'react-router-dom';
-import { formatHolidayDate, upcomingHolidays, useHolidays } from '../data/holidays';
+import { useMemo } from 'react';
+import { formatHolidayDate, useHolidays, type HolidayCategory } from '../data/holidays';
+import { useUpcomingEvents } from '../data/events';
+import type { Employee } from '../data/employees';
 
-export function UpcomingHolidays({ canManage = false }: { canManage?: boolean }) {
+type UpcomingItem = {
+  id: string;
+  date: string;
+  name: string;
+  category: HolidayCategory | 'Announcement' | 'Birthday' | 'Work Anniversary';
+  readOnly: boolean;
+};
+
+const TAG_STYLES: Record<string, { background: string; color: string }> = {
+  'National Holiday': { background: 'var(--accent-holiday-bg)', color: 'var(--accent-holiday)' },
+  'Optional Holiday': { background: 'var(--primary-bg)', color: 'var(--primary)' },
+  'Company Holiday': { background: 'var(--status-neutral-bg)', color: 'var(--status-neutral)' },
+  Announcement: { background: '#E0F2FE', color: '#0F766E' },
+  Birthday: { background: '#F3F4F6', color: '#475467' },
+  'Work Anniversary': { background: '#F5F3FF', color: '#6D28D9' },
+};
+
+export function UpcomingHolidays({ canManage = false, employees = [] }: { canManage?: boolean; employees?: Employee[] }) {
   const { holidays } = useHolidays();
-  const upcoming = upcomingHolidays(holidays);
+  const upcomingEvents = useUpcomingEvents(employees, 5);
+
+  const items = useMemo<UpcomingItem[]>(() => {
+    const mixed: UpcomingItem[] = holidays.map((h) => ({
+      id: h.id,
+      date: h.date,
+      name: h.name,
+      category: h.category,
+      readOnly: false,
+    }));
+
+    upcomingEvents.forEach((e) => {
+      mixed.push({
+        id: e.id,
+        date: e.date,
+        name: e.title,
+        category: e.kind === 'announcement' ? 'Announcement' : e.kind === 'birthday' ? 'Birthday' : 'Work Anniversary',
+        readOnly: true,
+      });
+    });
+
+    return mixed.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+  }, [holidays, upcomingEvents]);
 
   return (
     <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
@@ -12,7 +54,7 @@ export function UpcomingHolidays({ canManage = false }: { canManage?: boolean })
         style={{ borderColor: 'var(--line-soft)' }}
       >
         <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
-          Upcoming holidays
+          Upcoming
         </h3>
         <Link
           to="/holidays"
@@ -23,38 +65,47 @@ export function UpcomingHolidays({ canManage = false }: { canManage?: boolean })
         </Link>
       </div>
 
-      {upcoming.length === 0 ? (
+      {items.length === 0 ? (
         <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-          No upcoming holidays on the calendar.
+          Nothing coming up on the calendar.
         </p>
       ) : (
         <ul>
-          {upcoming.map((h) => (
-            <li
-              key={h.id}
-              className="flex items-center gap-4 border-b px-5 py-3 last:border-b-0"
-              style={{ borderColor: 'var(--line-soft)' }}
-            >
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center font-mono text-[10px] font-medium uppercase"
-                style={{
-                  background: 'var(--accent-holiday-bg)',
-                  color: 'var(--accent-holiday)',
-                  borderRadius: 'var(--radius-sm)',
-                }}
+          {items.map((item) => {
+            const tagStyle = TAG_STYLES[item.category] ?? TAG_STYLES['Company Holiday'];
+            return (
+              <li
+                key={item.id}
+                className="flex items-center gap-4 border-b px-5 py-3 last:border-b-0"
+                style={{ borderColor: 'var(--line-soft)' }}
               >
-                {h.date.slice(8, 10)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                  {h.name}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {formatHolidayDate(h.date)} · {h.type}
-                </p>
-              </div>
-            </li>
-          ))}
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center font-mono text-[10px] font-medium uppercase"
+                  style={{
+                    background: 'var(--accent-holiday-bg)',
+                    color: 'var(--accent-holiday)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  {item.date.slice(8, 10)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" style={{ color: 'var(--ink)' }}>
+                    {item.name}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {formatHolidayDate(item.date)}
+                  </p>
+                </div>
+                <span
+                  className="font-mono px-2 py-0.5 text-[10px] uppercase"
+                  style={{ ...tagStyle, borderRadius: 'var(--radius-sm)' }}
+                >
+                  {item.category}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

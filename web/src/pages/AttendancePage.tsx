@@ -241,7 +241,7 @@ export default function AttendancePage() {
 
       {/* Team / org view */}
       {(canViewOrg || canViewTeam) && (
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
           <TeamAttendanceTable
             title={canViewOrg ? 'Organization attendance — today' : 'My team — today'}
             employees={visibleTeam}
@@ -249,6 +249,17 @@ export default function AttendancePage() {
             leave={leaveRequests}
             date={today}
           />
+
+          {canViewOrg && (
+            <TeamAttendanceTable
+              title="Employee login details"
+              employees={employees}
+              records={records}
+              leave={leaveRequests}
+              date={today}
+              detailView
+            />
+          )}
         </div>
       )}
 

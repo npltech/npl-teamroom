@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { useClients } from '../data/clients';
 import { useCurrentEmployee } from '../data/currentUser';
 import { useEmployees } from '../data/employees';
+import { useProjects } from '../data/projects';
 import { useTasks, type Task, type TaskPriority, type TaskStatus } from '../data/tasks';
 import { Drawer } from '../components/Drawer';
 import { StatCard } from '../components/Ledger';
@@ -34,11 +36,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function TaskRow({
   task,
   assigneeName,
+  clientName,
+  projectName,
   onStatusChange,
   onLogHours,
 }: {
   task: Task;
   assigneeName?: string;
+  clientName?: string;
+  projectName?: string;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onLogHours: (id: string, hours: number) => void;
 }) {
@@ -59,6 +65,9 @@ function TaskRow({
           )}
         </p>
         <p className="truncate text-xs" style={{ color: 'var(--text-secondary)' }}>
+          {clientName && projectName ? `${clientName} · ${projectName}` : task.description}
+        </p>
+        <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
           {task.description}
         </p>
       </div>
@@ -124,11 +133,15 @@ export default function TasksPage() {
   const { role } = useOutletContext<Ctx>();
   const employee = useCurrentEmployee(role);
   const { employees } = useEmployees();
+  const { clients } = useClients();
+  const { projects } = useProjects();
   const { tasks, addTask, setStatus, logHours } = useTasks();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
   const [estimatedHours, setEstimatedHours] = useState('');
@@ -142,6 +155,11 @@ export default function TasksPage() {
     return [];
   }, [role, employee, employees]);
 
+  const availableProjects = useMemo(
+    () => projects.filter((project) => !selectedClientId || project.client_id === selectedClientId),
+    [projects, selectedClientId],
+  );
+
   const visibleTasks = useMemo(() => {
     if (role === 'HR' || role === 'SUPER_ADMIN') return tasks;
     if (role === 'MANAGER' && employee) {
@@ -153,6 +171,8 @@ export default function TasksPage() {
   }, [role, employee, employees, tasks]);
 
   const nameFor = (id: string) => employees.find((e) => e.id === id)?.name ?? 'Unknown';
+  const clientNameFor = (id: string) => clients.find((client) => client.id === id)?.name ?? 'Unknown';
+  const projectNameFor = (id: string) => projects.find((project) => project.id === id)?.name ?? 'Unknown';
   const today = new Date().toISOString().slice(0, 10);
   const openCount = visibleTasks.filter((t) => t.status !== 'COMPLETED').length;
   const overdueCount = visibleTasks.filter((t) => t.status !== 'COMPLETED' && t.due_date < today).length;
@@ -160,18 +180,22 @@ export default function TasksPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employee || !title.trim() || !assignedTo || !dueDate) return;
+    if (!employee || !title.trim() || !assignedTo || !selectedClientId || !selectedProjectId || !dueDate) return;
     addTask({
       title: title.trim(),
       description: description.trim(),
       assigned_to: assignedTo,
       assigned_by: employee.id,
+      client_id: selectedClientId,
+      project_id: selectedProjectId,
       priority,
       estimated_hours: parseFloat(estimatedHours) || 0,
       due_date: dueDate,
     });
     setTitle('');
     setDescription('');
+    setSelectedClientId('');
+    setSelectedProjectId('');
     setAssignedTo('');
     setPriority('MEDIUM');
     setEstimatedHours('');
@@ -218,6 +242,8 @@ export default function TasksPage() {
               key={t.id}
               task={t}
               assigneeName={role !== 'EMPLOYEE' ? nameFor(t.assigned_to) : undefined}
+              clientName={clientNameFor(t.client_id)}
+              projectName={projectNameFor(t.project_id)}
               onStatusChange={setStatus}
               onLogHours={logHours}
             />
@@ -239,6 +265,48 @@ export default function TasksPage() {
               style={inputStyle}
             />
           </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Client">
+              <select
+                required
+                value={selectedClientId}
+                onChange={(e) => {
+                  setSelectedClientId(e.target.value);
+                  setSelectedProjectId('');
+                }}
+                className="w-full border px-3 py-2 text-sm outline-none"
+                style={inputStyle}
+              >
+                <option value="" disabled>
+                  Select client…
+                </option>
+                {clients.filter((client) => client.status === 'ACTIVE').map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Project">
+              <select
+                required
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full border px-3 py-2 text-sm outline-none"
+                style={inputStyle}
+                disabled={!selectedClientId}
+              >
+                <option value="" disabled>
+                  Select project…
+                </option>
+                {availableProjects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <Field label="Assign to">
             <select required value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border px-3 py-2 text-sm outline-none" style={inputStyle}>
               <option value="" disabled>

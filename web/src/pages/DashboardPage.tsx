@@ -4,10 +4,8 @@ import { StatCard, LedgerPanel, LedgerRow } from '../components/Ledger';
 import { RosterStrip } from '../components/RosterStrip';
 import { AttendanceDonut } from '../components/AttendanceDonut';
 import { UpcomingHolidays } from '../components/UpcomingHolidays';
-import { UpcomingEvents } from '../components/UpcomingEvents';
 import { QuickLinks } from '../components/QuickLinks';
 import { useEmployees } from '../data/employees';
-import { useUpcomingEvents } from '../data/events';
 import { useCurrentEmployee } from '../data/currentUser';
 import { useTasks } from '../data/tasks';
 
@@ -15,7 +13,6 @@ type Ctx = { role: Role };
 
 function SuperAdminDashboard() {
   const { employees } = useEmployees();
-  const events = useUpcomingEvents(employees);
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -38,16 +35,7 @@ function SuperAdminDashboard() {
             />
           </div>
         </LedgerPanel>
-        <UpcomingHolidays canManage />
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <LedgerPanel title="Recently added users">
-          <LedgerRow primary="Meera Nair" secondary="HR · Finance dept" meta="Today" status="present" />
-          <LedgerRow primary="Arjun Sinha" secondary="Employee · Engineering" meta="Yesterday" status="present" />
-          <LedgerRow primary="Kabir Shah" secondary="Manager · Sales" meta="2 days ago" status="pending" />
-        </LedgerPanel>
-        <UpcomingEvents events={events} />
+        <UpcomingHolidays canManage employees={employees} />
       </div>
     </>
   );
@@ -55,7 +43,6 @@ function SuperAdminDashboard() {
 
 function HRDashboard() {
   const { employees } = useEmployees();
-  const events = useUpcomingEvents(employees);
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -78,7 +65,7 @@ function HRDashboard() {
             />
           </div>
         </LedgerPanel>
-        <UpcomingHolidays canManage />
+        <UpcomingHolidays canManage employees={employees} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -93,15 +80,12 @@ function HRDashboard() {
           <LedgerRow primary="Farah Khan" secondary="Casual leave · 1 day" meta="Rejected" status="absent" />
         </LedgerPanel>
       </div>
-
-      <div className="mt-6">
-        <UpcomingEvents events={events} />
-      </div>
     </>
   );
 }
 
 function ManagerDashboard() {
+  const { employees } = useEmployees();
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
@@ -125,7 +109,7 @@ function ManagerDashboard() {
             />
           </div>
         </LedgerPanel>
-        <UpcomingHolidays />
+        <UpcomingHolidays employees={employees} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -156,7 +140,6 @@ function ManagerDashboard() {
 
 function EmployeeDashboard({ role }: { role: Role }) {
   const { employees } = useEmployees();
-  const events = useUpcomingEvents(employees, 3);
   const employee = useCurrentEmployee(role);
   const { tasks } = useTasks();
   const myTasks = employee ? tasks.filter((t) => t.assigned_to === employee.id).slice(0, 4) : [];
@@ -204,7 +187,7 @@ function EmployeeDashboard({ role }: { role: Role }) {
             />
           </div>
         </div>
-        <UpcomingHolidays />
+        <UpcomingHolidays employees={employees} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -215,7 +198,7 @@ function EmployeeDashboard({ role }: { role: Role }) {
             { label: 'Log task time', path: '/tasks' },
           ]}
         />
-        <UpcomingEvents events={events} />
+        <div />
       </div>
     </>
   );

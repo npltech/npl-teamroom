@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 
+export type HolidayCategory = 'National Holiday' | 'Optional Holiday' | 'Company Holiday' | 'Announcement';
+
 export interface Holiday {
   id: string;
   date: string; // YYYY-MM-DD
   name: string;
-  type: 'National' | 'Optional' | 'Company';
+  category: HolidayCategory;
 }
 
 const STORAGE_KEY = 'roster.holidays';
 
 const SEED_HOLIDAYS: Holiday[] = [
-  { id: 'h1', date: '2026-08-15', name: 'Independence Day', type: 'National' },
-  { id: 'h2', date: '2026-10-02', name: 'Gandhi Jayanti', type: 'National' },
-  { id: 'h3', date: '2026-11-08', name: 'Diwali', type: 'National' },
-  { id: 'h4', date: '2026-12-25', name: 'Christmas', type: 'National' },
-  { id: 'h5', date: '2026-09-04', name: 'Founders\u2019 Day', type: 'Company' },
+  { id: 'h1', date: '2026-08-15', name: 'Independence Day', category: 'National Holiday' },
+  { id: 'h2', date: '2026-10-02', name: 'Gandhi Jayanti', category: 'National Holiday' },
+  { id: 'h3', date: '2026-11-08', name: 'Diwali', category: 'National Holiday' },
+  { id: 'h4', date: '2026-12-25', name: 'Christmas', category: 'National Holiday' },
+  { id: 'h5', date: '2026-09-04', name: 'Founders\u2019 Day', category: 'Company Holiday' },
 ];
 
 function loadHolidays(): Holiday[] {

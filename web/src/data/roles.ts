@@ -35,9 +35,11 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
       label: 'Work',
       items: [
         { label: 'Attendance', path: '/attendance', icon: '◷' },
-        { label: 'Leave', path: '/leave', icon: '▣' },
+        { label: 'Leave Request', path: '/leave', icon: '▣' },
+        { label: 'Clients', path: '/clients', icon: '◈' },
+        { label: 'Projects', path: '/projects', icon: '▣' },
         { label: 'Tasks', path: '/tasks', icon: '✓' },
-        { label: 'Holidays', path: '/holidays', icon: '▦' },
+        { label: 'Holidays & Events', path: '/holidays', icon: '▦' },
       ],
     },
     {
@@ -68,9 +70,11 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
       label: 'Work',
       items: [
         { label: 'Attendance', path: '/attendance', icon: '◷' },
-        { label: 'Leave', path: '/leave', icon: '▣' },
+        { label: 'Leave Request', path: '/leave', icon: '▣' },
+        { label: 'Clients', path: '/clients', icon: '◈' },
+        { label: 'Projects', path: '/projects', icon: '▣' },
         { label: 'Tasks', path: '/tasks', icon: '✓' },
-        { label: 'Holidays', path: '/holidays', icon: '▦' },
+        { label: 'Holidays & Events', path: '/holidays', icon: '▦' },
       ],
     },
     {
@@ -104,9 +108,11 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
       label: 'Work',
       items: [
         { label: 'Attendance', path: '/attendance', icon: '◷' },
-        { label: 'Leave', path: '/leave', icon: '▣' },
+        { label: 'Leave Request', path: '/leave', icon: '▣' },
+        { label: 'Clients', path: '/clients', icon: '◈' },
+        { label: 'Projects', path: '/projects', icon: '▣' },
         { label: 'Tasks', path: '/tasks', icon: '✓' },
-        { label: 'Holidays', path: '/holidays', icon: '▦' },
+        { label: 'Holidays & Events', path: '/holidays', icon: '▦' },
       ],
     },
     {
@@ -126,9 +132,9 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
       items: [
         { label: 'Profile', path: '/profile', icon: '◉' },
         { label: 'Attendance', path: '/attendance', icon: '◷' },
-        { label: 'Leave', path: '/leave', icon: '▣' },
+        { label: 'Leave Request', path: '/leave', icon: '▣' },
         { label: 'Tasks', path: '/tasks', icon: '✓' },
-        { label: 'Holidays', path: '/holidays', icon: '▦' },
+        { label: 'Holidays & Events', path: '/holidays', icon: '▦' },
         { label: 'Documents', path: '/documents', icon: '▤' },
       ],
     },

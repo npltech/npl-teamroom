@@ -11,6 +11,8 @@ import OrgChartPage from './pages/OrgChartPage';
 import DocumentsPage from './pages/DocumentsPage';
 import ReportsPage from './pages/ReportsPage';
 import TasksPage from './pages/TasksPage';
+import ClientsPage from './pages/ClientsPage';
+import ProjectsPage from './pages/ProjectsPage';
 import UsersPage from './pages/UsersPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import AppShell from './layouts/AppShell';
@@ -32,6 +34,8 @@ export default function App() {
           <Route path="org-chart" element={<OrgChartPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="reports" element={<ReportsPage />} />
+          <Route path="clients" element={<ClientsPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="*" element={<PlaceholderPage />} />

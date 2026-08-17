@@ -1,4 +1,4 @@
-import type { AttendanceRecord } from '../data/attendance';
+import { hoursBetween, type AttendanceRecord } from '../data/attendance';
 import type { Employee } from '../data/employees';
 import type { LeaveRequest } from '../data/leave';
 import { StatusTag } from './Ledger';
@@ -28,13 +28,87 @@ export function TeamAttendanceTable({
   records,
   leave,
   date,
+  detailView = false,
 }: {
   title: string;
   employees: Employee[];
   records: AttendanceRecord[];
   leave: LeaveRequest[];
   date: string;
+  detailView?: boolean;
 }) {
+  if (detailView) {
+    const rows = employees.flatMap((emp) =>
+      records
+        .filter((r) => r.employee_id === emp.id)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map((r) => ({ employee: emp, record: r })),
+    );
+
+    return (
+      <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+        <div className="flex items-center justify-between border-b px-5 py-3.5" style={{ borderColor: 'var(--line-soft)' }}>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
+            {title}
+          </h3>
+          <span className="font-mono text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            {rows.length} login entries
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm" style={{ borderCollapse: 'collapse' }}>
+            <thead style={{ background: 'var(--paper)' }}>
+              <tr>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Employee</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Code</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Date</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Login</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Logout</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Mode</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Hours</th>
+                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                    No login details available.
+                  </td>
+                </tr>
+              ) : (
+                rows.map(({ employee, record }) => {
+                  const hours = hoursBetween(record.check_in, record.check_out);
+                  return (
+                    <tr key={`${employee.id}-${record.id}`} style={{ borderTop: '1px solid var(--line-soft)' }}>
+                      <td className="px-4 py-3 align-top text-sm" style={{ color: 'var(--ink)' }}>{employee.name}</td>
+                      <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{employee.employee_code}</td>
+                      <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {new Date(record.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{record.check_in ?? '—'}</td>
+                      <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{record.check_out ?? '—'}</td>
+                      <td className="px-4 py-3 align-top">
+                        <span className="font-mono px-2 py-0.5 text-[10px] uppercase" style={{ background: 'var(--accent-structure-bg)', color: 'var(--accent-structure)', borderRadius: 'var(--radius-sm)' }}>
+                          {record.work_mode}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--ink)' }}>{hours != null ? `${hours}h` : '—'}</td>
+                      <td className="px-4 py-3 align-top">
+                        <StatusTag status={record.status === 'PRESENT' ? 'present' : 'absent'} label={record.status === 'PRESENT' ? 'Present' : 'Absent'} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
       <div className="flex items-center justify-between border-b px-5 py-3.5" style={{ borderColor: 'var(--line-soft)' }}>
