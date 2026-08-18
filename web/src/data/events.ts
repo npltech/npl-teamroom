@@ -6,6 +6,8 @@ export interface CompanyEvent {
   date: string; // YYYY-MM-DD (this year)
   title: string;
   kind: 'announcement' | 'anniversary' | 'birthday';
+  description?: string | null;
+  image?: string | null;
 }
 
 function daysAhead(n: number): string {

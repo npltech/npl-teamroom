@@ -1,4 +1,4 @@
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { ROLE_LABEL, type Role } from '../data/roles';
 import { StatCard, LedgerPanel, LedgerRow } from '../components/Ledger';
 import { RosterStrip } from '../components/RosterStrip';
@@ -42,6 +42,7 @@ function SuperAdminDashboard() {
 }
 
 function HRDashboard() {
+  const navigate = useNavigate();
   const { employees } = useEmployees();
   return (
     <>
@@ -75,9 +76,9 @@ function HRDashboard() {
           <LedgerRow primary="Sana Iqbal" secondary="Marketing — completed" status="present" />
         </LedgerPanel>
         <LedgerPanel title="Leave requests">
-          <LedgerRow primary="Anita Rao" secondary="Sick leave · 2 days" meta="Pending" status="pending" />
-          <LedgerRow primary="Vikram Joshi" secondary="Annual leave · 5 days" meta="Approved" status="present" />
-          <LedgerRow primary="Farah Khan" secondary="Casual leave · 1 day" meta="Rejected" status="absent" />
+          <LedgerRow primary="Anita Rao" secondary="Sick leave · 2 days" meta="Pending" status="pending" onClick={() => navigate('/leave')} />
+          <LedgerRow primary="Vikram Joshi" secondary="Annual leave · 5 days" meta="Approved" status="present" onClick={() => navigate('/leave')} />
+          <LedgerRow primary="Farah Khan" secondary="Casual leave · 1 day" meta="Rejected" status="absent" onClick={() => navigate('/leave')} />
         </LedgerPanel>
       </div>
     </>

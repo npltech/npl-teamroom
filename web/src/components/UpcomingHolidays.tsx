@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMemo } from 'react';
-import { formatHolidayDate, useHolidays, type HolidayCategory } from '../data/holidays';
+import { formatHolidayDate, resolveEventImage, useHolidays, type HolidayCategory } from '../data/holidays';
 import { useUpcomingEvents } from '../data/events';
 import type { Employee } from '../data/employees';
 
@@ -9,6 +9,8 @@ type UpcomingItem = {
   date: string;
   name: string;
   category: HolidayCategory | 'Announcement' | 'Birthday' | 'Work Anniversary';
+  description?: string | null;
+  image?: string | null;
   readOnly: boolean;
 };
 
@@ -22,6 +24,7 @@ const TAG_STYLES: Record<string, { background: string; color: string }> = {
 };
 
 export function UpcomingHolidays({ canManage = false, employees = [] }: { canManage?: boolean; employees?: Employee[] }) {
+  const navigate = useNavigate();
   const { holidays } = useHolidays();
   const upcomingEvents = useUpcomingEvents(employees, 5);
 
@@ -31,6 +34,8 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
       date: h.date,
       name: h.name,
       category: h.category,
+      description: h.description ?? null,
+      image: h.image ?? null,
       readOnly: false,
     }));
 
@@ -40,6 +45,8 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
         date: e.date,
         name: e.title,
         category: e.kind === 'announcement' ? 'Announcement' : e.kind === 'birthday' ? 'Birthday' : 'Work Anniversary',
+        description: e.description ?? null,
+        image: e.image ?? null,
         readOnly: true,
       });
     });
@@ -76,9 +83,16 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
             return (
               <li
                 key={item.id}
-                className="flex items-center gap-4 border-b px-5 py-3 last:border-b-0"
+                onClick={() => navigate(`/events/${item.id}`, { state: { event: item } })}
+                className="flex cursor-pointer items-center gap-4 border-b px-5 py-3 last:border-b-0"
                 style={{ borderColor: 'var(--line-soft)' }}
               >
+                <img
+                  src={resolveEventImage(item.image ?? null, item.name, item.category)}
+                  alt={item.name}
+                  className="h-11 w-11 shrink-0 rounded-md object-cover"
+                  style={{ border: '1px solid var(--line-soft)' }}
+                />
                 <span
                   className="flex h-9 w-9 shrink-0 items-center justify-center font-mono text-[10px] font-medium uppercase"
                   style={{
@@ -93,6 +107,11 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
                   <p className="truncate text-sm font-medium" style={{ color: 'var(--ink)' }}>
                     {item.name}
                   </p>
+                  {item.description && (
+                    <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                      {item.description}
+                    </p>
+                  )}
                   <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                     {formatHolidayDate(item.date)}
                   </p>

@@ -112,7 +112,7 @@ export default function LeavePage() {
   const balance = ANNUAL_BALANCE - usedDays;
 
   const canApproveTeam = role === 'MANAGER' && !!employee;
-  const canApproveOrg = role === 'HR';
+  const canApproveOrg = role === 'HR' || role === 'SUPER_ADMIN';
 
   const teamRequests = useMemo(() => {
     if (!canApproveTeam || !employee) return [];

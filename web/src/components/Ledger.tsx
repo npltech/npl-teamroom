@@ -72,16 +72,19 @@ export function LedgerRow({
   secondary,
   meta,
   status,
+  onClick,
 }: {
   primary: string;
   secondary?: string;
   meta?: string;
   status: Status;
+  onClick?: () => void;
 }) {
   const s = STATUS_STYLE[status];
   return (
     <div
-      className="flex items-center gap-4 border-b px-5 py-3 last:border-b-0 hover:bg-[var(--paper)]"
+      onClick={onClick}
+      className="flex cursor-pointer items-center gap-4 border-b px-5 py-3 last:border-b-0 hover:bg-[var(--paper)]"
       style={{ borderColor: 'var(--line-soft)' }}
     >
       <span className="h-8 w-[3px] shrink-0" style={{ background: s.color }} />

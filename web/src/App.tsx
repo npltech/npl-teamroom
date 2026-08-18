@@ -15,6 +15,8 @@ import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
 import UsersPage from './pages/UsersPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import EventDetailPage from './pages/EventDetailPage';
+import EmployeeAttendanceDetailPage from './pages/EmployeeAttendanceDetailPage';
 import AppShell from './layouts/AppShell';
 
 export default function App() {
@@ -26,8 +28,10 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="holidays" element={<HolidaysPage />} />
+          <Route path="events/:id" element={<EventDetailPage />} />
           <Route path="employees" element={<EmployeesPage />} />
           <Route path="attendance" element={<AttendancePage />} />
+          <Route path="attendance/:employeeId" element={<EmployeeAttendanceDetailPage />} />
           <Route path="leave" element={<LeavePage />} />
           <Route path="departments" element={<DepartmentsPage />} />
           <Route path="designations" element={<DesignationsPage />} />

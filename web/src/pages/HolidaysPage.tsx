@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useEmployees } from '../data/employees';
-import { formatHolidayDate, useHolidays, type HolidayCategory } from '../data/holidays';
+import { formatHolidayDate, resolveEventImage, useHolidays, type HolidayCategory } from '../data/holidays';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -13,6 +13,8 @@ type CalendarRow = {
   name: string;
   kind: 'Holiday' | 'Announcement' | 'Birthday' | 'Anniversary';
   group: HolidayCategory | 'Birthday' | 'Anniversary';
+  description?: string | null;
+  image?: string | null;
   readOnly: boolean;
   source: 'manual' | 'generated';
 };
@@ -36,15 +38,32 @@ function rowStyle(group: CalendarRow['group']) {
 }
 
 export default function HolidaysPage() {
+  const navigate = useNavigate();
   const { role } = useOutletContext<Ctx>();
   const canManage = role === 'SUPER_ADMIN' || role === 'HR';
-  const { holidays, addHoliday, removeHoliday } = useHolidays();
+  const { holidays, addHoliday, updateHoliday, removeHoliday } = useHolidays();
   const { employees } = useEmployees();
 
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [category, setCategory] = useState<HolidayCategory>('Company Holiday');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>('ALL');
+
+  function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setImagePreview(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
 
   const generatedRows = useMemo<CalendarRow[]>(() => {
     const rows: CalendarRow[] = [];
@@ -91,6 +110,8 @@ export default function HolidaysPage() {
       name: h.name,
       kind: h.category === 'Announcement' ? 'Announcement' : 'Holiday',
       group: h.category,
+      description: h.description ?? null,
+      image: h.image ?? null,
       readOnly: false,
       source: 'manual',
     }));
@@ -104,13 +125,43 @@ export default function HolidaysPage() {
     return row.kind === filter;
   });
 
+  function resetForm() {
+    setDate('');
+    setName('');
+    setDescription('');
+    setCategory('Company Holiday');
+    setImagePreview(null);
+    setEditingId(null);
+  }
+
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!date || !name.trim()) return;
-    addHoliday({ date, name: name.trim(), category });
-    setDate('');
-    setName('');
-    setCategory('Company Holiday');
+
+    const payload = {
+      date,
+      name: name.trim(),
+      category,
+      description: description.trim() || null,
+      image: imagePreview ?? null,
+    };
+
+    if (editingId) {
+      updateHoliday(editingId, payload);
+    } else {
+      addHoliday(payload);
+    }
+
+    resetForm();
+  }
+
+  function handleEdit(row: CalendarRow) {
+    setEditingId(row.id);
+    setDate(row.date);
+    setName(row.name);
+    setDescription(row.description ?? '');
+    setCategory(row.group as HolidayCategory);
+    setImagePreview(row.image ?? null);
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -166,9 +217,16 @@ export default function HolidaysPage() {
                 return (
                   <li
                     key={row.id}
-                    className="flex items-center gap-4 border-b px-5 py-3.5 last:border-b-0"
+                    onClick={() => navigate(`/events/${row.id}`, { state: { event: row } })}
+                    className="flex cursor-pointer items-center gap-4 border-b px-5 py-3.5 last:border-b-0"
                     style={{ borderColor: 'var(--line-soft)', opacity: isPast ? 0.6 : 1 }}
                   >
+                    <img
+                      src={resolveEventImage(row.image ?? null, row.name, row.group)}
+                      alt={row.name}
+                      className="h-12 w-12 shrink-0 rounded-md object-cover"
+                      style={{ border: '1px solid var(--line-soft)' }}
+                    />
                     <span
                       className="flex h-11 w-11 shrink-0 flex-col items-center justify-center leading-none"
                       style={{
@@ -186,6 +244,11 @@ export default function HolidaysPage() {
                       <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
                         {row.name}
                       </p>
+                      {row.description && (
+                        <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {row.description}
+                        </p>
+                      )}
                       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                         {formatHolidayDate(row.date)}
                       </p>
@@ -194,14 +257,24 @@ export default function HolidaysPage() {
                       {row.group}
                     </span>
                     {canManage && row.source === 'manual' && (
-                      <button
-                        onClick={() => removeHoliday(row.id)}
-                        className="font-mono text-[11px] uppercase tracking-wide hover:underline"
-                        style={{ color: 'var(--status-absent)' }}
-                        aria-label={`Remove ${row.name}`}
-                      >
-                        Remove
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEdit(row)}
+                          className="font-mono text-[11px] uppercase tracking-wide hover:underline"
+                          style={{ color: 'var(--accent-holiday)' }}
+                          aria-label={`Edit ${row.name}`}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => removeHoliday(row.id)}
+                          className="font-mono text-[11px] uppercase tracking-wide hover:underline"
+                          style={{ color: 'var(--status-absent)' }}
+                          aria-label={`Remove ${row.name}`}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     )}
                   </li>
                 );
@@ -216,7 +289,7 @@ export default function HolidaysPage() {
             style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}
           >
             <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
-              Add an item
+              {editingId ? 'Edit item' : 'Add an item'}
             </h3>
             <form onSubmit={handleAdd} className="mt-4 space-y-4">
               <label className="block">
@@ -263,12 +336,74 @@ export default function HolidaysPage() {
                   ))}
                 </select>
               </label>
+
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  Description / message
+                </span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Add a short note, birthday message, or event summary"
+                  rows={3}
+                  className="mt-1.5 w-full resize-none border px-3 py-2 text-sm outline-none"
+                  style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
+                />
+              </label>
+
+              <div className="block">
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  Image (optional)
+                </span>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <label
+                    className="flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden border border-dashed bg-white"
+                    style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
+                  >
+                    {imagePreview ? (
+                      <img src={imagePreview} alt="Event preview" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-2xl" aria-hidden="true">
+                        {category.includes('Birthday') || name.toLowerCase().includes('birthday') ? '🎂' : '🎉'}
+                      </span>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                  </label>
+                  <div className="flex flex-col gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <label className="cursor-pointer font-medium underline" style={{ color: 'var(--accent-holiday)' }}>
+                      Add Image
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => setImagePreview(null)}
+                        className="text-left font-medium underline"
+                        style={{ color: 'var(--status-absent)' }}
+                      >
+                        Remove image
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="w-full py-2 text-sm font-medium transition-opacity hover:opacity-90"
+                  style={{ background: 'var(--text-secondary)', color: '#fff', borderRadius: 'var(--radius-sm)' }}
+                >
+                  Cancel edit
+                </button>
+              )}
               <button
                 type="submit"
                 className="w-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
                 style={{ background: 'var(--accent-holiday)', color: '#fff', borderRadius: 'var(--radius-sm)' }}
               >
-                Add item
+                {editingId ? 'Save changes' : 'Add item'}
               </button>
             </form>
           </div>
