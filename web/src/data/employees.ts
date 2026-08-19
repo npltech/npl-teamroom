@@ -66,10 +66,9 @@ export function useEmployees() {
   }, [employees]);
 
   const addEmployee = useCallback((e: Omit<Employee, 'id' | 'employee_code'>) => {
-    setEmployees((prev) => [
-      ...prev,
-      { ...e, id: crypto.randomUUID(), employee_code: nextEmployeeCode(prev) },
-    ]);
+    const id = crypto.randomUUID();
+    setEmployees((prev) => [...prev, { ...e, id, employee_code: nextEmployeeCode(prev) }]);
+    return id;
   }, []);
 
   const updateEmployee = useCallback((id: string, patch: Partial<Omit<Employee, 'id' | 'employee_code'>>) => {

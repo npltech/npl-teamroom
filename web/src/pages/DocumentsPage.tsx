@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useCompanyDocuments, type CompanyDocCategory } from '../data/companyDocuments';
+import { Drawer } from '../components/Drawer';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -20,8 +21,10 @@ export default function DocumentsPage() {
   const [description, setDescription] = useState('');
   const [filter, setFilter] = useState<'ALL' | CompanyDocCategory>('ALL');
   const [dragActive, setDragActive] = useState(false);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
 
   const filtered = filter === 'ALL' ? documents : documents.filter((d) => d.category === filter);
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
 
   function handleDrag(e: React.DragEvent) {
     e.preventDefault();
@@ -116,7 +119,8 @@ export default function DocumentsPage() {
             filtered.map((d) => (
               <div
                 key={d.id}
-                className="flex items-start gap-4 border-b px-5 py-3.5 last:border-b-0"
+                onClick={() => setSelectedDocumentId(d.id)}
+                className="flex cursor-pointer items-start gap-4 border-b px-5 py-3.5 transition-colors hover:bg-[var(--paper)] last:border-b-0"
                 style={{ borderColor: 'var(--line-soft)' }}
               >
                 <span className="h-8 w-[3px] shrink-0 mt-1" style={{ background: 'var(--accent-holiday)' }} />
@@ -144,7 +148,10 @@ export default function DocumentsPage() {
                   </span>
                   {canManage && (
                     <button
-                      onClick={() => removeDocument(d.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeDocument(d.id);
+                      }}
                       className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                       style={{ color: 'var(--status-absent)' }}
                     >
@@ -172,6 +179,40 @@ export default function DocumentsPage() {
           </div>
         )}
       </div>
+
+      <Drawer
+        open={Boolean(selectedDocument)}
+        title="Document details"
+        onClose={() => setSelectedDocumentId(null)}
+      >
+        {selectedDocument && (
+          <div className="space-y-5">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                {selectedDocument.category}
+              </p>
+              <h2 className="font-display mt-2 text-2xl font-semibold" style={{ color: 'var(--ink)' }}>
+                {selectedDocument.name}
+              </h2>
+            </div>
+            <div className="space-y-4 border-y py-5" style={{ borderColor: 'var(--line-soft)' }}>
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Description</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedDocument.description || 'No description provided.'}</p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Uploaded</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedDocument.uploaded_at}</p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>File</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedDocument.file?.name || 'No file attached'}</p>
+                {selectedDocument.file && <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{selectedDocument.file.type || 'Unknown type'} · {(selectedDocument.file.size / 1024).toFixed(2)} KB</p>}
+              </div>
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       {/* Add Document Modal */}
       {showModal && (

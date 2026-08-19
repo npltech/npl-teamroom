@@ -50,6 +50,7 @@ export default function TaskDetailsPage() {
     }
 
     function handleLogTime() {
+        if (!task) return;
         const hours = Number(hoursInput);
         if (!Number.isFinite(hours) || hours <= 0) return;
         logTime(task.id, hours, currentUser);
@@ -57,6 +58,7 @@ export default function TaskDetailsPage() {
     }
 
     function handlePostComment() {
+        if (!task) return;
         if (!commentInput.trim()) return;
         addComment(task.id, currentUser, commentInput);
         setCommentInput('');

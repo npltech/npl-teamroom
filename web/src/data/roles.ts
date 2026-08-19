@@ -49,7 +49,6 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
         { label: 'Reports', path: '/reports', icon: '▥' },
         { label: 'Departments', path: '/departments', icon: '◈' },
         { label: 'Designations', path: '/designations', icon: '◆' },
-        { label: 'Users', path: '/users', icon: '◉' },
       ],
     },
   ],
@@ -130,7 +129,6 @@ export const ROLE_NAV: Record<Role, NavGroup[]> = {
     {
       label: 'Me',
       items: [
-        { label: 'Profile', path: '/profile', icon: '◉' },
         { label: 'Attendance', path: '/attendance', icon: '◷' },
         { label: 'Leave Request', path: '/leave', icon: '▣' },
         { label: 'Tasks', path: '/tasks', icon: '✓' },

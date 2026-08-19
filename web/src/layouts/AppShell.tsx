@@ -21,7 +21,7 @@ export default function AppShell() {
   const [role, setRole] = useState<Role>('EMPLOYEE');
   const employee = useCurrentEmployee(role);
   const { employees, updateEmployee } = useEmployees();
-  const { users } = useUsers();
+  const { users, updatePassword } = useUsers();
   const { departments } = useDepartments();
   const { designations } = useDesignations();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -37,6 +37,12 @@ export default function AppShell() {
   const [profileGender, setProfileGender] = useState<Gender | ''>('');
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   const account = useMemo(() => users.find((user) => user.role === role) ?? null, [users, role]);
   const override = profileOverrides[role] ?? {};
@@ -58,6 +64,42 @@ export default function AppShell() {
   function closeProfile() {
     setProfileOpen(false);
     setProfileError('');
+  }
+
+  function openPasswordChange() {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordError('');
+    setPasswordSuccess(false);
+    setPasswordOpen(true);
+  }
+
+  function closePasswordChange() {
+    setPasswordOpen(false);
+    setPasswordError('');
+  }
+
+  function savePassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('New passwords must match.');
+      return;
+    }
+    if (!account || !updatePassword(account.id, currentPassword, newPassword)) {
+      setPasswordError('Current password is incorrect.');
+      return;
+    }
+    setPasswordError('');
+    setPasswordSuccess(true);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    window.setTimeout(() => setPasswordSuccess(false), 3000);
   }
 
   function saveProfile(event: React.FormEvent) {
@@ -180,6 +222,7 @@ export default function AppShell() {
                 <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Name</span><input required value={profileName} onChange={(e) => setProfileName(e.target.value)} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /></label>
                 <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Date of Birth</span><input type="date" value={profileDob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setProfileDob(e.target.value)} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /></label>
                 <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Gender</span><select value={profileGender} onChange={(e) => setProfileGender(e.target.value as Gender | '')} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="">Select gender</option>{GENDERS.map((gender) => <option key={gender} value={gender}>{gender}</option>)}</select></label>
+                <button type="button" onClick={openPasswordChange} className="font-mono text-[11px] uppercase tracking-wide hover:underline" style={{ color: 'var(--accent-structure)' }}>Change password</button>
               </div>
             </div>
             {profileError && <p className="text-sm" style={{ color: 'var(--status-absent)' }}>{profileError}</p>}
@@ -188,6 +231,25 @@ export default function AppShell() {
           <div className="sticky bottom-0 mt-auto flex gap-2 border-t bg-white pt-5" style={{ borderColor: 'var(--line-soft)' }}><button type="button" onClick={closeProfile} className="flex-1 border px-3 py-2.5 text-sm font-medium" style={{ borderColor: 'var(--line)', color: 'var(--ink)', borderRadius: 'var(--radius-sm)' }}>Cancel</button><button type="submit" className="flex-1 px-3 py-2.5 text-sm font-medium" style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}>Save changes</button></div>
         </form>
       </Drawer>
+
+      {passwordOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md border bg-white p-6 shadow-xl" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-lg font-semibold" style={{ color: 'var(--ink)' }}>Change password</h2>
+              <button type="button" onClick={closePasswordChange} className="font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Close ✕</button>
+            </div>
+            <form onSubmit={savePassword} className="mt-5 space-y-4">
+              <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Current password</span><input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /></label>
+              <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>New password</span><input type="password" required minLength={8} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /></label>
+              <label className="block"><span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Confirm new password</span><input type="password" required minLength={8} value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} className="mt-1.5 w-full border px-3 py-2 text-sm outline-none" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /></label>
+              {passwordError && <p className="text-sm" style={{ color: 'var(--status-absent)' }}>{passwordError}</p>}
+              {passwordSuccess && <p className="text-sm" style={{ color: 'var(--status-present)' }}>Password updated</p>}
+              <div className="flex gap-3 border-t pt-4" style={{ borderColor: 'var(--line-soft)' }}><button type="button" onClick={closePasswordChange} className="flex-1 border py-2.5 text-sm font-medium" style={{ borderColor: 'var(--line)', color: 'var(--ink)', borderRadius: 'var(--radius-sm)' }}>Cancel</button><button type="submit" className="flex-1 py-2.5 text-sm font-medium" style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}>Update password</button></div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

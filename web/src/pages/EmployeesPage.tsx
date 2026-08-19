@@ -4,6 +4,7 @@ import { useEmployees, type Employee, type WorkMode } from '../data/employees';
 import { useDepartments } from '../data/departments';
 import { useDesignations } from '../data/designations';
 import { useEmployeeDocuments, type DocumentCategory } from '../data/employeeDocuments';
+import { useUsers } from '../data/users';
 import { Drawer } from '../components/Drawer';
 import { StatusTag } from '../components/Ledger';
 import type { Role } from '../data/roles';
@@ -21,6 +22,8 @@ type FormState = {
   manager_id: string;
   joining_date: string;
   work_mode: WorkMode;
+  password: string;
+  confirmPassword: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -32,6 +35,8 @@ const EMPTY_FORM: FormState = {
   manager_id: '',
   joining_date: '',
   work_mode: 'OFFICE',
+  password: '',
+  confirmPassword: '',
 };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -55,6 +60,7 @@ export default function EmployeesPage() {
   const canManage = role === 'SUPER_ADMIN' || role === 'HR';
 
   const { employees, addEmployee, updateEmployee, toggleStatus } = useEmployees();
+  const { addUser } = useUsers();
   const { departments } = useDepartments();
   const { designations } = useDesignations();
 
@@ -70,6 +76,7 @@ export default function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [passwordError, setPasswordError] = useState('');
 
   const { documents, addDocument, removeDocument } = useEmployeeDocuments(editingId);
   const [docName, setDocName] = useState('');
@@ -98,6 +105,7 @@ export default function EmployeesPage() {
   function openAdd() {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setPasswordError('');
     setDrawerOpen(true);
   }
 
@@ -112,13 +120,24 @@ export default function EmployeesPage() {
       manager_id: emp.manager_id ?? '',
       joining_date: emp.joining_date,
       work_mode: emp.work_mode,
+      password: '',
+      confirmPassword: '',
     });
+    setPasswordError('');
     setDrawerOpen(true);
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.department_id || !form.designation_id || !form.joining_date) {
+      return;
+    }
+    if (!editingId && form.password.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
+      return;
+    }
+    if (!editingId && form.password !== form.confirmPassword) {
+      setPasswordError('Passwords must match.');
       return;
     }
     const payload = {
@@ -134,8 +153,10 @@ export default function EmployeesPage() {
     if (editingId) {
       updateEmployee(editingId, payload);
     } else {
-      addEmployee({ ...payload, employment_status: 'ACTIVE' });
+      const employeeId = addEmployee({ ...payload, employment_status: 'ACTIVE' });
+      addUser({ name: payload.name, email: payload.email, role: 'EMPLOYEE', employee_id: employeeId, password: form.password });
     }
+    setPasswordError('');
     setDrawerOpen(false);
   }
 
@@ -309,6 +330,18 @@ export default function EmployeesPage() {
               style={inputStyle}
             />
           </Field>
+          {!editingId && (
+            <div className="space-y-4 border-y py-4" style={{ borderColor: 'var(--line-soft)' }}>
+              <Field label="Password">
+                <input type="password" required minLength={8} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="w-full border px-3 py-2 text-sm outline-none" style={inputStyle} />
+              </Field>
+              <Field label="Confirm password">
+                <input type="password" required minLength={8} value={form.confirmPassword} onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))} className="w-full border px-3 py-2 text-sm outline-none" style={inputStyle} />
+              </Field>
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Employee can change this later from their profile.</p>
+              {passwordError && <p className="text-xs" style={{ color: 'var(--status-absent)' }}>{passwordError}</p>}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Field label="Department">
               <select
