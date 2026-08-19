@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
   hasOpenSession,
   hoursBetween,
@@ -10,6 +10,7 @@ import { useCurrentEmployee } from '../data/currentUser';
 import { useDepartments } from '../data/departments';
 import { useEmployees, type WorkMode } from '../data/employees';
 import { useHolidays } from '../data/holidays';
+import { useLeaveRequests } from '../data/leave';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -22,13 +23,24 @@ type LocationState =
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORK_MODES: WorkMode[] = ['OFFICE', 'WFH', 'HYBRID'];
 
+function formatMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function minutesBetween(checkIn: string | null, checkOut: string | null): number {
+  return Math.round((hoursBetween(checkIn, checkOut) ?? 0) * 60);
+}
+
 
 export default function AttendancePage() {
+  const navigate = useNavigate();
   const { role } = useOutletContext<Ctx>();
   const employee = useCurrentEmployee(role);
   const { employees } = useEmployees();
   const { departments } = useDepartments();
   const { holidays } = useHolidays();
+  const { requests: leaveRequests } = useLeaveRequests();
   const { records, checkIn, checkOut, addManualEntry, today } = useAttendance();
 
   const isHRAdmin = role === 'HR' || role === 'SUPER_ADMIN';
@@ -49,6 +61,10 @@ export default function AttendancePage() {
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [employeeFilter, setEmployeeFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [managerFilter, setManagerFilter] = useState('ALL');
+  const [organizationWorkMode, setOrganizationWorkMode] = useState<'ALL' | WorkMode>('ALL');
+  const [superAdminSection, setSuperAdminSection] = useState<'overview' | 'employees'>('overview');
 
   const currentEmployee = employee ?? employees[0] ?? null;
   const visibleEmployee = selectedEmployeeId
@@ -71,34 +87,21 @@ export default function AttendancePage() {
 
   const currentDayOpen = targetEmployee ? hasOpenSession(records, targetEmployee.id, today) : null;
 
-  const monthDays = useMemo(() => {
-    const first = new Date(year, month - 1, 1);
-    const last = new Date(year, month, 0);
-    const leading = (first.getDay() + 6) % 7;
-    const totalCells = Math.ceil((leading + last.getDate()) / 7) * 7;
-    const days: Array<{ iso: string; inMonth: boolean; day: number }> = [];
+  const monthlyAttendance = useMemo(() => {
+    const lastDay = new Date(year, month, 0).getDate();
 
-    for (let index = 0; index < totalCells; index += 1) {
-      const date = new Date(year, month - 1, index - leading + 1);
-      const iso = date.toISOString().slice(0, 10);
-      days.push({ iso, inMonth: date.getMonth() === month - 1, day: date.getDate() });
-    }
+    return Array.from({ length: lastDay }, (_, index) => {
+      const iso = `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
+      const sessions = targetSessions.filter((record) => record.date === iso);
+      const total = sessions.reduce((sum, session) => sum + (hoursBetween(session.check_in, session.check_out) ?? 0), 0);
+      const isApprovedLeave = leaveRequests.some(
+        (request) => request.employee_id === targetEmployee?.id && request.status === 'APPROVED' && iso >= request.start_date && iso <= request.end_date,
+      );
+      const status = holidaySet.has(iso) ? 'holiday' : isApprovedLeave ? 'leave' : sessions.length > 0 ? 'present' : 'absent';
 
-    return days;
-  }, [year, month]);
-
-  const monthlyStatus = useMemo(() => {
-    const map = new Map<string, 'present' | 'holiday' | 'muted'>();
-
-    for (const entry of monthDays) {
-      const sessions = targetSessions.filter((record) => record.date === entry.iso);
-      const isWeekend = [0, 6].includes(new Date(`${entry.iso}T00:00:00`).getDay());
-      const isHoliday = holidaySet.has(entry.iso);
-      const status = isHoliday ? 'holiday' : isWeekend ? 'muted' : sessions.length > 0 ? 'present' : 'muted';
-      map.set(entry.iso, status);
-    }
-    return map;
-  }, [monthDays, targetSessions, holidaySet]);
+      return { iso, sessions, total: Number(total.toFixed(1)), status };
+    }).sort((a, b) => b.iso.localeCompare(a.iso));
+  }, [year, month, targetEmployee, targetSessions, holidaySet, leaveRequests]);
 
   const selectedDaySessions = useMemo(() => {
     if (!targetEmployee) return [] as AttendanceRecord[];
@@ -252,7 +255,126 @@ export default function AttendancePage() {
     { label: 'Not logged today', value: String(adminRows.filter((r) => !r.hasToday).length) },
   ];
 
+  const isSuperAdmin = role === 'SUPER_ADMIN';
+  const organizationAllRows = useMemo(() => {
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    const monthEnd = `${monthPrefix}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+    const lastCompletedDate = monthPrefix === today.slice(0, 7) ? today : monthEnd < today ? monthEnd : `${monthPrefix}-00`;
+    const workingDays = Array.from({ length: new Date(year, month, 0).getDate() }, (_, index) => index + 1)
+      .map((day) => `${monthPrefix}-${String(day).padStart(2, '0')}`)
+      .filter((date) => date <= lastCompletedDate && new Date(`${date}T00:00:00`).getDay() !== 0 && new Date(`${date}T00:00:00`).getDay() !== 6 && !holidaySet.has(date));
+    const requiredMinutes = workingDays.length * 9 * 60;
+
+    return employees
+      .map((emp) => {
+        const employeeRecords = records.filter((record) => record.employee_id === emp.id && record.date.startsWith(monthPrefix) && record.date <= lastCompletedDate);
+        const workedMinutes = employeeRecords.reduce((sum, record) => sum + minutesBetween(record.check_in, record.check_out), 0);
+        const overtime = Math.max(0, workedMinutes - requiredMinutes);
+        const shortfall = Math.max(0, requiredMinutes - workedMinutes);
+        const todayRecords = records.filter((record) => record.employee_id === emp.id && record.date === today);
+        const onLeave = leaveRequests.some((request) => request.employee_id === emp.id && request.status === 'APPROVED' && today >= request.start_date && today <= request.end_date);
+        const todayStatus = todayRecords.length > 0 ? 'PRESENT' : onLeave ? 'LEAVE' : today > lastCompletedDate && monthPrefix !== today.slice(0, 7) ? 'UPCOMING' : 'ABSENT';
+        const late = todayRecords.some((record) => record.check_in && record.check_in > '09:15');
+        return { employee: emp, requiredMinutes, workedMinutes, overtime, shortfall, attendance: requiredMinutes ? Math.min(100, (workedMinutes / requiredMinutes) * 100) : 0, todayStatus, late };
+      });
+  }, [employees, records, year, month, today, holidaySet, leaveRequests]);
+
+  const organizationRows = useMemo(() => organizationAllRows.filter((row) => {
+    const search = searchTerm.trim().toLowerCase();
+    const managerOk = managerFilter === 'ALL' || row.employee.manager_id === managerFilter;
+    const departmentOk = departmentFilter === 'ALL' || row.employee.department_id === departmentFilter;
+    const employeeOk = employeeFilter === 'ALL' || row.employee.id === employeeFilter;
+    const workModeOk = organizationWorkMode === 'ALL' || row.employee.work_mode === organizationWorkMode;
+    const statusOk = statusFilter === 'ALL' || row.todayStatus === statusFilter;
+    return managerOk && departmentOk && employeeOk && workModeOk && statusOk && (!search || row.employee.name.toLowerCase().includes(search));
+  }), [organizationAllRows, departmentFilter, employeeFilter, searchTerm, statusFilter, managerFilter, organizationWorkMode]);
+
+  const organizationMetrics = useMemo(() => {
+    const activeEmployees = employees;
+    const present = activeEmployees.filter((emp) => records.some((record) => record.employee_id === emp.id && record.date === today));
+    const leave = activeEmployees.filter((emp) => leaveRequests.some((request) => request.employee_id === emp.id && request.status === 'APPROVED' && today >= request.start_date && today <= request.end_date));
+    const rows = organizationAllRows;
+    const requiredMinutes = rows.reduce((sum, row) => sum + row.requiredMinutes, 0);
+    const workedMinutes = rows.reduce((sum, row) => sum + row.workedMinutes, 0);
+    const overtime = rows.reduce((sum, row) => sum + row.overtime, 0);
+    const shortfall = rows.reduce((sum, row) => sum + row.shortfall, 0);
+    return {
+      totalEmployees: activeEmployees.length,
+      presentToday: present.length,
+      absentToday: Math.max(0, activeEmployees.length - present.length - leave.length),
+      onLeave: leave.length,
+      wfh: present.filter((emp) => records.some((record) => record.employee_id === emp.id && record.date === today && record.work_mode === 'WFH')).length,
+      late: activeEmployees.filter((emp) => records.some((record) => record.employee_id === emp.id && record.date === today && record.check_in && record.check_in > '09:15')).length,
+      requiredMinutes,
+      workedMinutes,
+      overtime,
+      shortfall,
+      attendance: requiredMinutes ? Math.min(100, (workedMinutes / requiredMinutes) * 100) : 0,
+    };
+  }, [employees, records, today, leaveRequests, organizationAllRows]);
+
   const titleEmployee = targetEmployee ?? currentEmployee;
+
+  if (isSuperAdmin) {
+    const metricCards = [
+      ['Total Employees', organizationMetrics.totalEmployees, 'var(--ink)'],
+      ['Present Today', organizationMetrics.presentToday, 'var(--status-present)'],
+      ['Absent Today', organizationMetrics.absentToday, 'var(--status-absent)'],
+      ['On Leave', organizationMetrics.onLeave, '#F59E0B'],
+      ['WFH', organizationMetrics.wfh, 'var(--accent-structure)'],
+      ['Late Today', organizationMetrics.late, '#B45309'],
+    ];
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--status-present)' }}>Attendance</p>
+            <h1 className="font-display mt-1 text-2xl font-semibold" style={{ color: 'var(--ink)' }}>Attendance Management</h1>
+            <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>Monitor and manage attendance across all employees</p>
+          </div>
+          <div className="inline-flex items-center rounded-md border p-1" style={{ borderColor: 'var(--line-soft)', background: 'var(--paper)' }}>
+            {['Overview', 'Employee Attendance', 'Attendance Requests'].map((label) => {
+              const section = label === 'Overview' ? 'overview' : 'employees';
+              return <button key={label} onClick={() => { if (label !== 'Attendance Requests') setSuperAdminSection(section); }} className="px-3 py-1.5 text-xs font-medium" style={{ background: (superAdminSection === section && label !== 'Attendance Requests') ? 'var(--ink)' : 'transparent', color: (superAdminSection === section && label !== 'Attendance Requests') ? '#fff' : 'var(--ink)', borderRadius: 'var(--radius-sm)' }}>
+                {label}
+              </button>;
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border bg-white p-4" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+          <p className="font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{monthLabel}</p>
+          <div className="flex gap-2">
+            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border px-2.5 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}>{MONTH_NAMES.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border px-2.5 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}>{Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 2 + index).map((value) => <option key={value} value={value}>{value}</option>)}</select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {metricCards.map(([label, value, color]) => <div key={label} className="border bg-white p-4" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-sm)' }}><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-2 text-2xl font-semibold" style={{ color: color as string }}>{value}</p></div>)}
+        </div>
+
+        <div className="border bg-white p-5" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+          <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Monthly summary</h2><span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{organizationMetrics.attendance.toFixed(1)}% attendance</span></div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {[['Required Hours', formatMinutes(organizationMetrics.requiredMinutes)], ['Worked Hours', formatMinutes(organizationMetrics.workedMinutes)], ['Overtime', formatMinutes(organizationMetrics.overtime)], ['Shortfall', formatMinutes(organizationMetrics.shortfall)], ['Attendance', `${organizationMetrics.attendance.toFixed(1)}%`]].map(([label, value]) => <div key={label}><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-1 text-lg font-semibold" style={{ color: 'var(--ink)' }}>{value}</p></div>)}
+          </div>
+        </div>
+
+        <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+          <div className="border-b p-4" style={{ borderColor: 'var(--line-soft)' }}><div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search employee" className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />
+            <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All departments</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
+            <select value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All teams / managers</option>{employees.filter((emp) => !emp.manager_id).map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}</select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All attendance statuses</option><option value="PRESENT">Present</option><option value="ABSENT">Absent</option><option value="LEAVE">On leave</option><option value="UPCOMING">Upcoming</option></select>
+            <select value={organizationWorkMode} onChange={(e) => setOrganizationWorkMode(e.target.value as 'ALL' | WorkMode)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All work modes</option><option value="OFFICE">Office</option><option value="WFH">WFH</option><option value="HYBRID">Hybrid</option></select>
+          </div></div>
+          {superAdminSection === 'employees' || superAdminSection === 'overview' ? <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr style={{ background: 'var(--paper)' }}>{['Employee', 'Department', 'Required', 'Worked', 'Overtime', 'Shortfall', 'Attendance'].map((heading) => <th key={heading} className="px-5 py-3 text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{heading}</th>)}</tr></thead><tbody>{organizationRows.map((row) => <tr key={row.employee.id} onClick={() => navigate(`/attendance/${row.employee.id}?month=${month}&year=${year}`)} className="cursor-pointer border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)' }}><td className="px-5 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-5 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{departments.find((department) => department.id === row.employee.department_id)?.name ?? 'Unknown'}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.requiredMinutes)}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.workedMinutes)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.overtime > 0 ? 'var(--status-present)' : 'var(--text-muted)' }}>{formatMinutes(row.overtime)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.shortfall > 0 ? 'var(--status-absent)' : 'var(--text-muted)' }}>{formatMinutes(row.shortfall)}</td><td className="px-5 py-3"><span className="font-mono text-xs font-semibold" style={{ color: row.attendance >= 90 ? 'var(--status-present)' : 'var(--status-absent)' }}>{row.attendance.toFixed(1)}%</span><span className="ml-2 text-[10px] uppercase" style={{ color: row.todayStatus === 'LEAVE' ? '#F59E0B' : row.todayStatus === 'UPCOMING' ? 'var(--text-muted)' : 'var(--text-secondary)' }}>{row.todayStatus}</span></td></tr>)}</tbody></table></div> : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -549,39 +671,33 @@ export default function AttendancePage() {
                   </div>
                 </div>
 
-                <div className="p-3">
-                  <div className="grid grid-cols-7 gap-2 text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-secondary)' }}>
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                      <div key={day} className="px-2 py-1 text-center">{day}</div>
-                    ))}
-                  </div>
+                <div className="divide-y" style={{ borderColor: 'var(--line-soft)' }}>
+                  {monthlyAttendance.map((day) => {
+                    const isSelected = selectedDate === day.iso;
+                    const isToday = day.iso === today;
+                    const statusLabel = day.status === 'holiday' ? 'Holiday' : day.status === 'leave' ? 'Leave' : day.status === 'present' ? 'Present' : 'Absent';
+                    const statusColor = day.status === 'holiday' ? '#8B5CF6' : day.status === 'leave' ? '#F59E0B' : day.status === 'present' ? '#22C55E' : 'var(--status-absent)';
 
-                  <div className="mt-2 grid grid-cols-7 gap-2">
-                    {monthDays.map((day) => {
-                      const iso = day.iso;
-                      const isSelected = selectedDate === iso;
-                      const isToday = iso === today;
-                      const isMuted = !day.inMonth || day.iso.includes('-') === false;
-                      const status = monthlyStatus.get(iso) ?? 'muted';
-                      const dotColor = status === 'present' ? '#22C55E' : status === 'holiday' ? '#8B5CF6' : status === 'muted' ? '#94A3B8' : '#F59E0B';
-
-                      return (
-                        <button
-                          key={iso}
-                          onClick={() => setSelectedDate(iso)}
-                          className="relative flex h-16 flex-col items-center justify-between rounded-md border p-1 text-left transition-colors"
-                          style={{
-                            borderColor: isSelected ? 'var(--accent-structure)' : isToday ? 'rgba(99, 102, 241, 0.5)' : 'var(--line-soft)',
-                            background: isSelected ? 'rgba(100, 116, 139, 0.08)' : isToday ? 'rgba(99, 102, 241, 0.04)' : isMuted ? 'rgba(148,163,184,0.04)' : '#fff',
-                            opacity: day.inMonth ? 1 : 0.45,
-                          }}
-                        >
-                          <span className="text-[11px]" style={{ color: isToday ? 'var(--ink)' : 'var(--text-secondary)' }}>{day.day}</span>
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: dotColor }} />
-                        </button>
-                      );
-                    })}
-                  </div>
+                    return (
+                      <button
+                        key={day.iso}
+                        onClick={() => setSelectedDate(day.iso)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--paper)] sm:gap-5"
+                        style={{ background: isSelected ? 'rgba(100, 116, 139, 0.08)' : isToday ? 'rgba(99, 102, 241, 0.04)' : '#fff' }}
+                      >
+                        <span className="w-28 shrink-0 text-sm font-medium sm:w-36" style={{ color: 'var(--ink)' }}>
+                          {new Date(`${day.iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}
+                        </span>
+                        <span className="flex min-w-0 items-center gap-2 text-xs uppercase tracking-wide" style={{ color: statusColor }}>
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: statusColor }} />
+                          {statusLabel}
+                        </span>
+                        <span className="ml-auto shrink-0 font-mono text-xs" style={{ color: day.total > 0 ? 'var(--ink)' : 'var(--text-muted)' }}>
+                          {day.total > 0 ? `${day.total.toFixed(1)}h` : '—'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

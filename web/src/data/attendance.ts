@@ -15,7 +15,20 @@ export interface AttendanceRecord {
   status: 'PRESENT' | 'ABSENT';
 }
 
+export interface AttendanceAuditEntry {
+  id: string;
+  record_id: string;
+  changed_by: string;
+  changed_on: string;
+  previous_check_in: string | null;
+  previous_check_out: string | null;
+  updated_check_in: string | null;
+  updated_check_out: string | null;
+  reason: string;
+}
+
 const STORAGE_KEY = 'roster.attendance';
+const AUDIT_STORAGE_KEY = 'roster.attendance.audit';
 
 function daysAgo(n: number): string {
   const d = new Date();
@@ -49,6 +62,14 @@ function load(): AttendanceRecord[] {
     return JSON.parse(raw) as AttendanceRecord[];
   } catch {
     return SEED_ATTENDANCE;
+  }
+}
+
+function loadAudit(): AttendanceAuditEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(AUDIT_STORAGE_KEY) ?? '[]') as AttendanceAuditEntry[];
+  } catch {
+    return [];
   }
 }
 
@@ -128,10 +149,15 @@ export function hasOpenSession(records: AttendanceRecord[], employeeId: string, 
 
 export function useAttendance() {
   const [records, setRecords] = useState<AttendanceRecord[]>(() => load());
+  const [audit, setAudit] = useState<AttendanceAuditEntry[]>(() => loadAudit());
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   }, [records]);
+
+  useEffect(() => {
+    localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(audit));
+  }, [audit]);
 
   const checkIn = useCallback(
     (employeeId: string, workMode: WorkMode, coords: { latitude: number; longitude: number } | null) => {
@@ -192,5 +218,34 @@ export function useAttendance() {
     [],
   );
 
-  return { records, checkIn, checkOut, addManualEntry, today: today() };
+  const updateAttendanceRecord = useCallback(
+    (recordId: string, changes: Pick<AttendanceRecord, 'check_in' | 'check_out' | 'work_mode'>, reason: string) => {
+      if (!reason.trim()) return false;
+      let previous: AttendanceRecord | null = null;
+      setRecords((prev) => {
+        previous = prev.find((record) => record.id === recordId) ?? null;
+        if (!previous) return prev;
+        return prev.map((record) => (record.id === recordId ? { ...record, ...changes, status: 'PRESENT' } : record));
+      });
+      if (!previous) return false;
+      setAudit((prev) => [
+        {
+          id: crypto.randomUUID(),
+          record_id: recordId,
+          changed_by: 'Super Admin',
+          changed_on: new Date().toISOString().slice(0, 10),
+          previous_check_in: previous!.check_in,
+          previous_check_out: previous!.check_out,
+          updated_check_in: changes.check_in,
+          updated_check_out: changes.check_out,
+          reason: reason.trim(),
+        },
+        ...prev,
+      ]);
+      return true;
+    },
+    [],
+  );
+
+  return { records, checkIn, checkOut, addManualEntry, updateAttendanceRecord, audit, today: today() };
 }
