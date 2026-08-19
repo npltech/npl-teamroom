@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useClients } from '../data/clients';
 import { useCurrentEmployee } from '../data/currentUser';
 import { useEmployees } from '../data/employees';
@@ -48,12 +48,13 @@ function TaskRow({
   onStatusChange: (id: string, status: TaskStatus) => void;
   onLogHours: (id: string, hours: number) => void;
 }) {
+  const navigate = useNavigate();
   const [hoursInput, setHoursInput] = useState('');
   const today = new Date().toISOString().slice(0, 10);
   const overdue = task.due_date < today && task.status !== 'COMPLETED';
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b px-5 py-3.5 last:border-b-0" style={{ borderColor: 'var(--line-soft)' }}>
+    <div onClick={() => navigate(`/tasks/${task.id}`)} className="flex cursor-pointer flex-wrap items-center gap-3 border-b px-5 py-3.5 last:border-b-0" style={{ borderColor: 'var(--line-soft)' }}>
       <span className="h-8 w-[3px] shrink-0" style={{ background: PRIORITY_COLOR[task.priority] }} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium" style={{ color: 'var(--ink)' }}>
@@ -88,6 +89,7 @@ function TaskRow({
       </span>
 
       <select
+        onClick={(e) => e.stopPropagation()}
         value={task.status}
         onChange={(e) => onStatusChange(task.id, e.target.value as TaskStatus)}
         className="border px-2 py-1.5 font-mono text-xs outline-none"
@@ -102,6 +104,7 @@ function TaskRow({
 
       <div className="flex items-center gap-1">
         <input
+          onClick={(e) => e.stopPropagation()}
           type="number"
           min="0"
           step="0.5"
@@ -112,7 +115,8 @@ function TaskRow({
           style={inputStyle}
         />
         <button
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             const h = parseFloat(hoursInput);
             if (!isNaN(h) && h > 0) {
               onLogHours(task.id, h);

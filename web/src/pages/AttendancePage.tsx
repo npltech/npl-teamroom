@@ -12,6 +12,7 @@ import { useEmployees, type WorkMode } from '../data/employees';
 import { useHolidays } from '../data/holidays';
 import { useLeaveRequests } from '../data/leave';
 import type { Role } from '../data/roles';
+import { ChevronRight } from 'lucide-react';
 
 type Ctx = { role: Role };
 
@@ -289,6 +290,20 @@ export default function AttendancePage() {
     return managerOk && departmentOk && employeeOk && workModeOk && statusOk && (!search || row.employee.name.toLowerCase().includes(search));
   }), [organizationAllRows, departmentFilter, employeeFilter, searchTerm, statusFilter, managerFilter, organizationWorkMode]);
 
+  const todayAttendanceRows = useMemo(() => employees.map((emp) => {
+    const todayRecord = records.find((record) => record.employee_id === emp.id && record.date === today);
+    const onLeave = leaveRequests.some((request) => request.employee_id === emp.id && request.status === 'APPROVED' && today >= request.start_date && today <= request.end_date);
+    const status = onLeave ? 'On leave' : todayRecord?.status === 'ABSENT' ? 'Absent' : todayRecord ? 'Present' : 'Not checked in';
+    return { employee: emp, status, checkIn: todayRecord?.check_in ?? '—' };
+  }), [employees, records, today, leaveRequests]);
+
+  const todayAttendanceMetrics = useMemo(() => ({
+    present: todayAttendanceRows.filter((row) => row.status === 'Present').length,
+    absent: todayAttendanceRows.filter((row) => row.status === 'Absent').length,
+    onLeave: todayAttendanceRows.filter((row) => row.status === 'On leave').length,
+    notCheckedIn: todayAttendanceRows.filter((row) => row.status === 'Not checked in').length,
+  }), [todayAttendanceRows]);
+
   const organizationMetrics = useMemo(() => {
     const activeEmployees = employees;
     const present = activeEmployees.filter((emp) => records.some((record) => record.employee_id === emp.id && record.date === today));
@@ -355,6 +370,19 @@ export default function AttendancePage() {
           {metricCards.map(([label, value, color]) => <div key={label} className="border bg-white p-4" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-sm)' }}><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-2 text-2xl font-semibold" style={{ color: color as string }}>{value}</p></div>)}
         </div>
 
+        <section>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Today's attendance</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[['Present', todayAttendanceMetrics.present, 'var(--status-present)'], ['Absent', todayAttendanceMetrics.absent, 'var(--status-absent)'], ['On leave', todayAttendanceMetrics.onLeave, '#2563EB'], ['Not checked in', todayAttendanceMetrics.notCheckedIn, 'var(--text-muted)']].map(([label, value, color]) => <div key={label} className="rounded-lg p-4" style={{ background: 'var(--surface)' }}><p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-1 text-2xl font-bold" style={{ color: color as string }}>{value}</p></div>)}
+          </div>
+          <div className="mt-3 overflow-hidden rounded-lg bg-white" style={{ border: '1px solid var(--line-soft)' }}>
+            <table className="w-full text-left text-sm">
+              <thead style={{ background: 'var(--paper)' }}><tr><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Employee</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Department</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Status</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Check-in</th></tr></thead>
+              <tbody>{todayAttendanceRows.map((row) => { const statusColor = row.status === 'Present' ? 'var(--status-present)' : row.status === 'Absent' ? 'var(--status-absent)' : row.status === 'On leave' ? '#2563EB' : 'var(--text-muted)'; return <tr key={row.employee.id} className="border-t" style={{ borderColor: 'var(--line-soft)' }}><td className="px-4 py-2.5 font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-4 py-2.5" style={{ color: 'var(--text-secondary)' }}>{departments.find((department) => department.id === row.employee.department_id)?.name ?? '—'}</td><td className="px-4 py-2.5 font-medium" style={{ color: statusColor }}>{row.status}</td><td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{row.checkIn}</td></tr>; })}</tbody>
+            </table>
+          </div>
+        </section>
+
         <div className="border bg-white p-5" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Monthly summary</h2><span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{organizationMetrics.attendance.toFixed(1)}% attendance</span></div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -370,7 +398,7 @@ export default function AttendancePage() {
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All attendance statuses</option><option value="PRESENT">Present</option><option value="ABSENT">Absent</option><option value="LEAVE">On leave</option><option value="UPCOMING">Upcoming</option></select>
             <select value={organizationWorkMode} onChange={(e) => setOrganizationWorkMode(e.target.value as 'ALL' | WorkMode)} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}><option value="ALL">All work modes</option><option value="OFFICE">Office</option><option value="WFH">WFH</option><option value="HYBRID">Hybrid</option></select>
           </div></div>
-          {superAdminSection === 'employees' || superAdminSection === 'overview' ? <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr style={{ background: 'var(--paper)' }}>{['Employee', 'Department', 'Required', 'Worked', 'Overtime', 'Shortfall', 'Attendance'].map((heading) => <th key={heading} className="px-5 py-3 text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{heading}</th>)}</tr></thead><tbody>{organizationRows.map((row) => <tr key={row.employee.id} onClick={() => navigate(`/attendance/${row.employee.id}?month=${month}&year=${year}`)} className="cursor-pointer border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)' }}><td className="px-5 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-5 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{departments.find((department) => department.id === row.employee.department_id)?.name ?? 'Unknown'}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.requiredMinutes)}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.workedMinutes)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.overtime > 0 ? 'var(--status-present)' : 'var(--text-muted)' }}>{formatMinutes(row.overtime)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.shortfall > 0 ? 'var(--status-absent)' : 'var(--text-muted)' }}>{formatMinutes(row.shortfall)}</td><td className="px-5 py-3"><span className="font-mono text-xs font-semibold" style={{ color: row.attendance >= 90 ? 'var(--status-present)' : 'var(--status-absent)' }}>{row.attendance.toFixed(1)}%</span><span className="ml-2 text-[10px] uppercase" style={{ color: row.todayStatus === 'LEAVE' ? '#F59E0B' : row.todayStatus === 'UPCOMING' ? 'var(--text-muted)' : 'var(--text-secondary)' }}>{row.todayStatus}</span></td></tr>)}</tbody></table></div> : null}
+          {superAdminSection === 'employees' || superAdminSection === 'overview' ? <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr style={{ background: 'var(--paper)' }}>{['Employee', 'Department', 'Required', 'Worked', 'Overtime', 'Shortfall', 'Attendance', ''].map((heading) => <th key={heading} className="px-5 py-3 text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{heading}</th>)}</tr></thead><tbody>{organizationRows.map((row) => <tr key={row.employee.id} onClick={() => navigate(`/attendance/${row.employee.id}?month=${month}&year=${year}`)} className="cursor-pointer border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)' }}><td className="px-5 py-3 text-sm font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-5 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{departments.find((department) => department.id === row.employee.department_id)?.name ?? 'Unknown'}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.requiredMinutes)}</td><td className="px-5 py-3 font-mono text-xs">{formatMinutes(row.workedMinutes)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.overtime > 0 ? 'var(--status-present)' : 'var(--text-muted)' }}>{formatMinutes(row.overtime)}</td><td className="px-5 py-3 font-mono text-xs" style={{ color: row.shortfall > 0 ? 'var(--status-absent)' : 'var(--text-muted)' }}>{formatMinutes(row.shortfall)}</td><td className="px-5 py-3"><span className="font-mono text-xs font-semibold" style={{ color: row.attendance >= 90 ? 'var(--status-present)' : 'var(--status-absent)' }}>{row.attendance.toFixed(1)}%</span><span className="ml-2 text-[10px] uppercase" style={{ color: row.todayStatus === 'LEAVE' ? '#F59E0B' : row.todayStatus === 'UPCOMING' ? 'var(--text-muted)' : 'var(--text-secondary)' }}>{row.todayStatus}</span></td><td className="px-5 py-3 text-right"><ChevronRight size={16} strokeWidth={1.75} style={{ color: 'var(--text-muted)' }} /></td></tr>)}</tbody></table></div> : null}
         </div>
       </div>
     );

@@ -19,7 +19,25 @@ export interface Task {
   created_at: string; // YYYY-MM-DD
 }
 
+export interface TaskTimeEntry {
+  id: string;
+  task_id: string;
+  date: string;
+  hours: number;
+  logged_by: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  commenter: string;
+  timestamp: string;
+  text: string;
+}
+
 const STORAGE_KEY = 'roster.tasks';
+const TIME_LOG_STORAGE_KEY = 'roster.task-time-logs';
+const COMMENT_STORAGE_KEY = 'roster.task-comments';
 
 function daysFromNow(n: number): string {
   const d = new Date();
@@ -51,12 +69,31 @@ function load(): Task[] {
   }
 }
 
+function loadList<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>(() => load());
+  const [timeEntries, setTimeEntries] = useState<TaskTimeEntry[]>(() => loadList<TaskTimeEntry>(TIME_LOG_STORAGE_KEY));
+  const [comments, setComments] = useState<TaskComment[]>(() => loadList<TaskComment>(COMMENT_STORAGE_KEY));
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
   }, [tasks]);
+
+  useEffect(() => {
+    localStorage.setItem(TIME_LOG_STORAGE_KEY, JSON.stringify(timeEntries));
+  }, [timeEntries]);
+
+  useEffect(() => {
+    localStorage.setItem(COMMENT_STORAGE_KEY, JSON.stringify(comments));
+  }, [comments]);
 
   const addTask = useCallback(
     (payload: {
@@ -95,5 +132,28 @@ export function useTasks() {
     );
   }, []);
 
-  return { tasks, addTask, setStatus, logHours };
+  const logTime = useCallback((taskId: string, hours: number, loggedBy: string) => {
+    if (hours <= 0) return;
+    setTimeEntries((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      task_id: taskId,
+      date: new Date().toISOString().slice(0, 10),
+      hours,
+      logged_by: loggedBy,
+    }]);
+    setTasks((prev) => prev.map((task) => task.id === taskId ? { ...task, worked_hours: Math.round((task.worked_hours + hours) * 10) / 10 } : task));
+  }, []);
+
+  const addComment = useCallback((taskId: string, commenter: string, text: string) => {
+    if (!text.trim()) return;
+    setComments((prev) => [...prev, {
+      id: crypto.randomUUID(),
+      task_id: taskId,
+      commenter,
+      timestamp: new Date().toISOString(),
+      text: text.trim(),
+    }]);
+  }, []);
+
+  return { tasks, addTask, setStatus, logHours, timeEntries, comments, logTime, addComment };
 }

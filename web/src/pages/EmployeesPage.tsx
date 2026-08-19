@@ -68,6 +68,7 @@ export default function EmployeesPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   const { documents, addDocument, removeDocument } = useEmployeeDocuments(editingId);
@@ -88,6 +89,11 @@ export default function EmployeesPage() {
       return matchesSearch && matchesDept && matchesStatus;
     });
   }, [employees, search, deptFilter, statusFilter]);
+
+  const selectedEmployee = useMemo(
+    () => employees.find((employee) => employee.id === selectedEmployeeId) ?? null,
+    [employees, selectedEmployeeId],
+  );
 
   function openAdd() {
     setEditingId(null);
@@ -219,7 +225,8 @@ export default function EmployeesPage() {
           filtered.map((emp) => (
             <div
               key={emp.id}
-              className="grid grid-cols-[2fr_1.3fr_1.3fr_1.3fr_0.9fr_0.9fr_auto] items-center gap-3 border-b px-5 py-3 last:border-b-0 hover:bg-[var(--paper)]"
+              onClick={() => setSelectedEmployeeId(emp.id)}
+              className="grid cursor-pointer grid-cols-[2fr_1.3fr_1.3fr_1.3fr_0.9fr_0.9fr_auto] items-center gap-3 border-b px-5 py-3 last:border-b-0 hover:bg-[var(--paper)]"
               style={{ borderColor: 'var(--line-soft)', opacity: emp.employment_status === 'INACTIVE' ? 0.6 : 1 }}
             >
               <div className="min-w-0">
@@ -247,7 +254,7 @@ export default function EmployeesPage() {
               </span>
               <StatusTag status={emp.employment_status === 'ACTIVE' ? 'present' : 'neutral'} label={emp.employment_status === 'ACTIVE' ? 'Active' : 'Inactive'} />
               {canManage ? (
-                <div className="flex items-center gap-3 justify-self-end">
+                <div className="flex items-center gap-3 justify-self-end" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => openEdit(emp)}
                     className="font-mono text-[11px] uppercase tracking-wide hover:underline"
@@ -463,6 +470,60 @@ export default function EmployeesPage() {
             {editingId ? 'Save changes' : 'Add employee'}
           </button>
         </form>
+      </Drawer>
+
+      <Drawer
+        open={Boolean(selectedEmployee)}
+        title={selectedEmployee ? selectedEmployee.name : 'Employee details'}
+        onClose={() => setSelectedEmployeeId(null)}
+      >
+        {selectedEmployee && (
+          <div className="space-y-5">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                {selectedEmployee.employee_code}
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{selectedEmployee.email}</span>
+                <StatusTag
+                  status={selectedEmployee.employment_status === 'ACTIVE' ? 'present' : 'neutral'}
+                  label={selectedEmployee.employment_status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-y py-4" style={{ borderColor: 'var(--line-soft)' }}>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Phone</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedEmployee.phone || '—'}</p></div>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Department</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{deptName(selectedEmployee.department_id)}</p></div>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Designation</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{designationName(selectedEmployee.designation_id)}</p></div>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Manager</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{managerName(selectedEmployee.manager_id)}</p></div>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Joining date</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedEmployee.joining_date}</p></div>
+              <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Work mode</p><p className="mt-1 text-sm" style={{ color: 'var(--ink)' }}>{selectedEmployee.work_mode}</p></div>
+            </div>
+
+            {canManage && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    openEdit(selectedEmployee);
+                    setSelectedEmployeeId(null);
+                  }}
+                  className="flex-1 px-3 py-2 text-sm font-medium"
+                  style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}
+                >
+                  Edit employee
+                </button>
+                <button
+                  onClick={() => toggleStatus(selectedEmployee.id)}
+                  className="border px-3 py-2 text-sm font-medium"
+                  style={{ borderColor: 'var(--line)', color: selectedEmployee.employment_status === 'ACTIVE' ? 'var(--status-absent)' : 'var(--status-present)', borderRadius: 'var(--radius-sm)' }}
+                >
+                  {selectedEmployee.employment_status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </Drawer>
     </div>
   );

@@ -35,6 +35,7 @@ export default function ClientsPage() {
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
     const [notes, setNotes] = useState('');
+    const [source, setSource] = useState<Client['source']>('');
     const [type, setType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
     const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
@@ -55,6 +56,7 @@ export default function ClientsPage() {
         setEmail('');
         setPhone('');
         setNotes('');
+        setSource('');
         setType('INTERNAL');
         setStatus('ACTIVE');
     }
@@ -71,6 +73,7 @@ export default function ClientsPage() {
         setEmail(client.email);
         setPhone(client.phone);
         setNotes(client.notes);
+        setSource(client.source ?? '');
         setType(client.type);
         setStatus(client.status);
         setDrawerOpen(true);
@@ -86,6 +89,7 @@ export default function ClientsPage() {
             email: email.trim(),
             phone: phone.trim(),
             notes: notes.trim(),
+            source,
             type,
             status,
         };
@@ -240,6 +244,18 @@ export default function ClientsPage() {
                     </div>
                     <Field label="Notes">
                         <textarea value={notes} rows={3} onChange={(e) => setNotes(e.target.value)} className="w-full resize-none border px-3 py-2 text-sm outline-none" style={inputStyle} />
+                    </Field>
+                    <Field label="Source">
+                        <select value={source} onChange={(e) => setSource(e.target.value as Client['source'])} className="w-full border px-3 py-2 text-sm outline-none" style={inputStyle}>
+                            <option value="">Select Source</option>
+                            <option value="Upwork">Upwork</option>
+                            <option value="Fiverr">Fiverr</option>
+                            <option value="LinkedIn">LinkedIn</option>
+                            <option value="Referral">Referral</option>
+                            <option value="Website">Website</option>
+                            <option value="Direct">Direct</option>
+                            <option value="Other">Other</option>
+                        </select>
                     </Field>
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="Type">

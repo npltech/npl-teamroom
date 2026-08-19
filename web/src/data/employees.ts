@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type WorkMode = 'OFFICE' | 'WFH' | 'HYBRID';
 export type EmploymentStatus = 'ACTIVE' | 'INACTIVE';
+export type Gender = 'Male' | 'Female' | 'Other' | 'Prefer not to say';
 
 export interface Employee {
   id: string;
@@ -14,6 +15,7 @@ export interface Employee {
   manager_id: string | null;
   joining_date: string; // YYYY-MM-DD
   date_of_birth?: string; // YYYY-MM-DD
+  gender?: Gender;
   employment_status: EmploymentStatus;
   work_mode: WorkMode;
 }

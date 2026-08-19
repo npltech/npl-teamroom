@@ -11,6 +11,7 @@ import OrgChartPage from './pages/OrgChartPage';
 import DocumentsPage from './pages/DocumentsPage';
 import ReportsPage from './pages/ReportsPage';
 import TasksPage from './pages/TasksPage';
+import TaskDetailsPage from './pages/TaskDetailsPage';
 import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
 import UsersPage from './pages/UsersPage';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="clients" element={<ClientsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="tasks" element={<TasksPage />} />
+          <Route path="tasks/:id" element={<TaskDetailsPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="*" element={<PlaceholderPage />} />
         </Route>

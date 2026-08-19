@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type ClientType = 'INTERNAL' | 'EXTERNAL';
 export type ClientStatus = 'ACTIVE' | 'INACTIVE';
+export type ClientSource = 'Upwork' | 'Fiverr' | 'LinkedIn' | 'Referral' | 'Website' | 'Direct' | 'Other' | '';
 
 export interface Client {
     id: string;
@@ -10,6 +11,7 @@ export interface Client {
     email: string;
     phone: string;
     notes: string;
+    source: ClientSource;
     type: ClientType;
     status: ClientStatus;
 }
@@ -23,6 +25,7 @@ const DEFAULT_CLIENT: Client = {
     email: 'amelia@northplanet.co',
     phone: '+91 98765 43210',
     notes: 'Primary partner for digital growth and portal work.',
+    source: '',
     type: 'INTERNAL',
     status: 'ACTIVE',
 };
