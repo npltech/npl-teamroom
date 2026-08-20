@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { WorkMode } from './employees';
 
 export const STANDARD_HOURS_PER_DAY = 9;
+export const STANDARD_SHIFT_END = '18:00';
+
+export type OvertimeApprovalStatus = 'approved' | 'pending' | 'rejected';
 
 export interface AttendanceRecord {
   id: string;
@@ -13,6 +16,15 @@ export interface AttendanceRecord {
   longitude: number | null;
   work_mode: WorkMode;
   status: 'PRESENT' | 'ABSENT';
+  is_manual_entry: boolean;
+  manual_entry_reason: string | null;
+  is_early_checkout: boolean;
+  early_checkout_reason: string | null;
+  overtime_minutes: number;
+  overtime_reason: string | null;
+  overtime_approval_status: OvertimeApprovalStatus | null;
+  overtime_approved_by: string | null;
+  mats: string | null;
 }
 
 export interface AttendanceAuditEntry {
@@ -36,33 +48,103 @@ function daysAgo(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const SEED_ATTENDANCE: AttendanceRecord[] = [
-  { id: 'a1',  employee_id: 'e12', date: daysAgo(3), check_in: '09:08', check_out: '18:02', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a2',  employee_id: 'e12', date: daysAgo(2), check_in: '09:14', check_out: '17:55', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a3',  employee_id: 'e12', date: daysAgo(1), check_in: '09:02', check_out: '18:10', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a4',  employee_id: 'e6', date: daysAgo(3), check_in: '09:30', check_out: '18:20', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
-  { id: 'a5',  employee_id: 'e6', date: daysAgo(2), check_in: '09:25', check_out: '18:05', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a6',  employee_id: 'e6', date: daysAgo(1), check_in: '09:40', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a7',  employee_id: 'e3', date: daysAgo(3), check_in: '09:12', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a8',  employee_id: 'e3', date: daysAgo(2), check_in: '09:00', check_out: '17:30', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a9',  employee_id: 'e3', date: daysAgo(1), check_in: '09:20', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+const SEED_ATTENDANCE: Partial<AttendanceRecord>[] = [
+  { id: 'a1', employee_id: 'e12', date: daysAgo(3), check_in: '09:08', check_out: '18:02', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
+  { id: 'a2', employee_id: 'e12', date: daysAgo(2), check_in: '09:14', check_out: '17:55', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
+  { id: 'a3', employee_id: 'e12', date: daysAgo(1), check_in: '09:02', check_out: '18:10', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
+  { id: 'a4', employee_id: 'e6', date: daysAgo(3), check_in: '09:30', check_out: '18:20', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
+  { id: 'a5', employee_id: 'e6', date: daysAgo(2), check_in: '09:25', check_out: '18:05', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
+  { id: 'a6', employee_id: 'e6', date: daysAgo(1), check_in: '09:40', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'a7', employee_id: 'e3', date: daysAgo(3), check_in: '09:12', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'a8', employee_id: 'e3', date: daysAgo(2), check_in: '09:00', check_out: '17:30', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'a9', employee_id: 'e3', date: daysAgo(1), check_in: '09:20', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
   { id: 'a10', employee_id: 'e3', date: daysAgo(6), check_in: '09:05', check_out: '11:25', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
   { id: 'a11', employee_id: 'e3', date: daysAgo(6), check_in: '12:30', check_out: '18:15', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
   { id: 'a12', employee_id: 'e2', date: daysAgo(2), check_in: '09:10', check_out: '17:50', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
   { id: 'a13', employee_id: 'e7', date: daysAgo(1), check_in: '09:15', check_out: '18:05', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
 ];
 
+const TODAY_SAMPLE_ATTENDANCE: Partial<AttendanceRecord>[] = [
+  { id: 'today-e1', employee_id: 'e1', date: daysAgo(0), check_in: '09:02', check_out: '18:04', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
+  { id: 'today-e2', employee_id: 'e2', date: daysAgo(0), check_in: '09:25', check_out: '17:40', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
+  { id: 'today-e3', employee_id: 'e3', date: daysAgo(0), check_in: '09:12', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'today-e5', employee_id: 'e5', date: daysAgo(0), check_in: null, check_out: null, latitude: null, longitude: null, work_mode: 'WFH', status: 'ABSENT' },
+  { id: 'today-e7', employee_id: 'e7', date: daysAgo(0), check_in: '08:58', check_out: '17:32', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT', is_manual_entry: true, manual_entry_reason: 'Biometric scanner was unavailable at the entrance' },
+  { id: 'today-e9', employee_id: 'e9', date: daysAgo(0), check_in: '09:06', check_out: '18:01', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
+];
+
 function load(): AttendanceRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_ATTENDANCE));
-      return SEED_ATTENDANCE;
+      const seeded = [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE].map(normalizeRecord);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+      return seeded;
     }
-    return JSON.parse(raw) as AttendanceRecord[];
+    const stored = JSON.parse(raw) as Partial<AttendanceRecord>[];
+    const today = daysAgo(0);
+    const todayRecords = stored.filter((record) => record.date === today);
+    const missingSamples = TODAY_SAMPLE_ATTENDANCE.filter((sample) => {
+      const employeeRecords = todayRecords.filter((record) => record.employee_id === sample.employee_id);
+      return sample.check_in ? !employeeRecords.some((record) => record.check_in) : employeeRecords.length === 0;
+    });
+    return [...stored, ...missingSamples].map(normalizeRecord);
   } catch {
-    return SEED_ATTENDANCE;
+    return [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE].map(normalizeRecord);
   }
+}
+
+function minutesFromTime(time: string | null): number | null {
+  if (!time) return null;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function normalizeRecord(record: Partial<AttendanceRecord>): AttendanceRecord {
+  const checkOutMinutes = minutesFromTime(record.check_out ?? null);
+  const workedMinutes = record.check_in && record.check_out
+    ? Math.max(0, (minutesFromTime(record.check_out) ?? 0) - (minutesFromTime(record.check_in) ?? 0))
+    : 0;
+  const early = checkOutMinutes !== null && checkOutMinutes < minutesFromTime(STANDARD_SHIFT_END)!;
+  const overtime = record.overtime_minutes ?? Math.max(0, workedMinutes - STANDARD_HOURS_PER_DAY * 60);
+  return {
+    id: record.id ?? crypto.randomUUID(),
+    employee_id: record.employee_id ?? '',
+    date: record.date ?? today(),
+    check_in: record.check_in ?? null,
+    check_out: record.check_out ?? null,
+    latitude: record.latitude ?? null,
+    longitude: record.longitude ?? null,
+    work_mode: record.work_mode ?? 'OFFICE',
+    status: record.status ?? 'PRESENT',
+    is_manual_entry: record.is_manual_entry ?? false,
+    manual_entry_reason: record.manual_entry_reason ?? null,
+    is_early_checkout: record.is_early_checkout ?? early,
+    early_checkout_reason: record.early_checkout_reason ?? null,
+    overtime_minutes: overtime,
+    overtime_reason: record.overtime_reason ?? null,
+    overtime_approval_status: record.overtime_approval_status ?? (overtime > 0 ? 'pending' : null),
+    overtime_approved_by: record.overtime_approved_by ?? null,
+    mats: record.mats ?? null,
+  };
+}
+
+function validateRecord(record: Pick<AttendanceRecord, 'is_manual_entry' | 'manual_entry_reason' | 'is_early_checkout' | 'early_checkout_reason' | 'overtime_minutes' | 'overtime_reason'>): boolean {
+  return (!record.is_manual_entry || Boolean(record.manual_entry_reason?.trim()))
+    && (!record.is_early_checkout || Boolean(record.early_checkout_reason?.trim()))
+    && (record.overtime_minutes <= 0 || Boolean(record.overtime_reason?.trim()));
+}
+
+function deriveMetadata(checkIn: string | null, checkOut: string | null, overrides: Partial<AttendanceRecord> = {}): Pick<AttendanceRecord, 'is_early_checkout' | 'overtime_minutes' | 'overtime_approval_status'> {
+  const inMinutes = minutesFromTime(checkIn);
+  const outMinutes = minutesFromTime(checkOut);
+  const workedMinutes = inMinutes !== null && outMinutes !== null ? Math.max(0, outMinutes - inMinutes) : 0;
+  const overtimeMinutes = Math.max(0, workedMinutes - STANDARD_HOURS_PER_DAY * 60);
+  return {
+    is_early_checkout: outMinutes !== null && outMinutes < minutesFromTime(STANDARD_SHIFT_END)!,
+    overtime_minutes: overrides.overtime_minutes ?? overtimeMinutes,
+    overtime_approval_status: (overrides.overtime_minutes ?? overtimeMinutes) > 0 ? (overrides.overtime_approval_status ?? 'pending') : null,
+  };
 }
 
 function loadAudit(): AttendanceAuditEntry[] {
@@ -178,6 +260,15 @@ export function useAttendance() {
           longitude: coords?.longitude ?? null,
           work_mode: workMode,
           status: 'PRESENT',
+          is_manual_entry: false,
+          manual_entry_reason: null,
+          is_early_checkout: false,
+          early_checkout_reason: null,
+          overtime_minutes: 0,
+          overtime_reason: null,
+          overtime_approval_status: null,
+          overtime_approved_by: null,
+          mats: null,
         };
         return [rec, ...prev];
       });
@@ -199,33 +290,36 @@ export function useAttendance() {
   }, []);
 
   const addManualEntry = useCallback(
-    (employeeId: string, draft: { date: string; check_in: string; check_out: string; work_mode: WorkMode }) => {
+    (employeeId: string, draft: { date: string; check_in: string; check_out: string; work_mode: WorkMode; manual_entry_reason: string; early_checkout_reason?: string; overtime_reason?: string }) => {
+      const metadata = deriveMetadata(draft.check_in, draft.check_out);
+      const record = normalizeRecord({
+        id: crypto.randomUUID(), employee_id: employeeId, date: draft.date, check_in: draft.check_in, check_out: draft.check_out,
+        latitude: null, longitude: null, work_mode: draft.work_mode, status: 'PRESENT', is_manual_entry: true,
+        manual_entry_reason: draft.manual_entry_reason, early_checkout_reason: draft.early_checkout_reason ?? null,
+        overtime_reason: draft.overtime_reason ?? null, ...metadata,
+      });
+      if (!validateRecord(record)) return false;
       setRecords((prev) => [
-        {
-          id: crypto.randomUUID(),
-          employee_id: employeeId,
-          date: draft.date,
-          check_in: draft.check_in,
-          check_out: draft.check_out,
-          latitude: null,
-          longitude: null,
-          work_mode: draft.work_mode,
-          status: 'PRESENT',
-        },
+        record,
         ...prev,
       ]);
+      return true;
     },
     [],
   );
 
   const updateAttendanceRecord = useCallback(
-    (recordId: string, changes: Pick<AttendanceRecord, 'check_in' | 'check_out' | 'work_mode'>, reason: string) => {
+    (recordId: string, changes: Pick<AttendanceRecord, 'check_in' | 'check_out' | 'work_mode'> & Partial<Pick<AttendanceRecord, 'early_checkout_reason' | 'overtime_reason' | 'overtime_approval_status'>>, reason: string) => {
       if (!reason.trim()) return false;
       let previous: AttendanceRecord | null = null;
       setRecords((prev) => {
         previous = prev.find((record) => record.id === recordId) ?? null;
         if (!previous) return prev;
-        return prev.map((record) => (record.id === recordId ? { ...record, ...changes, status: 'PRESENT' } : record));
+        return prev.map((record) => {
+          if (record.id !== recordId) return record;
+          const next = normalizeRecord({ ...record, ...changes, ...deriveMetadata(changes.check_in, changes.check_out, changes), is_manual_entry: true, manual_entry_reason: reason.trim() });
+          return validateRecord(next) ? next : record;
+        });
       });
       if (!previous) return false;
       setAudit((prev) => [

@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
   hasOpenSession,
   hoursBetween,
+  STANDARD_SHIFT_END,
   useAttendance,
   type AttendanceRecord,
 } from '../data/attendance';
@@ -30,7 +31,24 @@ function formatMinutes(minutes: number): string {
 }
 
 function minutesBetween(checkIn: string | null, checkOut: string | null): number {
-  return Math.round((hoursBetween(checkIn, checkOut) ?? 0) * 60);
+  if (!checkIn || !checkOut) return 0;
+  const [inHours, inMinutes] = checkIn.split(':').map(Number);
+  const [outHours, outMinutes] = checkOut.split(':').map(Number);
+  return Math.max(0, outHours * 60 + outMinutes - (inHours * 60 + inMinutes));
+}
+
+function formatDurationLabel(minutes: number): string {
+  if (minutes <= 0) return '—';
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+function formatAttendanceTime(time: string | null): string {
+  if (!time) return '—';
+  const [hour, minute] = time.split(':').map(Number);
+  return new Date(2000, 0, 1, hour, minute).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 
@@ -58,6 +76,9 @@ export default function AttendancePage() {
     check_in: '09:00',
     check_out: '18:00',
     work_mode: 'OFFICE' as WorkMode,
+    manual_entry_reason: '',
+    early_checkout_reason: '',
+    overtime_reason: '',
   });
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [employeeFilter, setEmployeeFilter] = useState('ALL');
@@ -178,15 +199,23 @@ export default function AttendancePage() {
   function handleManualSave(event: React.FormEvent) {
     event.preventDefault();
     if (!targetEmployee) return;
-    if (!manualForm.date || !manualForm.check_in || !manualForm.check_out) return;
-    addManualEntry(targetEmployee.id, {
+    if (!manualForm.date || !manualForm.check_in || !manualForm.check_out || !manualForm.manual_entry_reason.trim()) return;
+    const overtimeMinutes = Math.max(0, Math.round((hoursBetween(manualForm.check_in, manualForm.check_out) ?? 0) * 60) - 9 * 60);
+    if (manualForm.check_out < STANDARD_SHIFT_END && !manualForm.early_checkout_reason.trim()) return;
+    if (overtimeMinutes > 0 && !manualForm.overtime_reason.trim()) return;
+    const saved = addManualEntry(targetEmployee.id, {
       date: manualForm.date,
       check_in: manualForm.check_in,
       check_out: manualForm.check_out,
       work_mode: manualForm.work_mode,
+      manual_entry_reason: manualForm.manual_entry_reason,
+      early_checkout_reason: manualForm.early_checkout_reason,
+      overtime_reason: manualForm.overtime_reason,
     });
-    setManualMode(false);
-    setSelectedDate(manualForm.date);
+    if (saved) {
+      setManualMode(false);
+      setSelectedDate(manualForm.date);
+    }
   }
 
   function handleExport() {
@@ -291,14 +320,35 @@ export default function AttendancePage() {
   }), [organizationAllRows, departmentFilter, employeeFilter, searchTerm, statusFilter, managerFilter, organizationWorkMode]);
 
   const todayAttendanceRows = useMemo(() => employees.map((emp) => {
-    const todayRecord = records.find((record) => record.employee_id === emp.id && record.date === today);
+    const sessions = records
+      .filter((record) => record.employee_id === emp.id && record.date === today)
+      .sort((a, b) => (a.check_in ?? '').localeCompare(b.check_in ?? ''));
+    const firstSession = sessions.find((session) => session.check_in) ?? sessions[0];
+    const lastSession = [...sessions].reverse().find((session) => session.check_out) ?? sessions[sessions.length - 1];
+    const runningEnd = new Date().toTimeString().slice(0, 5);
+    const workedMinutes = sessions.reduce(
+      (sum, session) => sum + minutesBetween(session.check_in, session.check_out ?? runningEnd),
+      0,
+    );
     const onLeave = leaveRequests.some((request) => request.employee_id === emp.id && request.status === 'APPROVED' && today >= request.start_date && today <= request.end_date);
-    const status = onLeave ? 'On leave' : todayRecord?.status === 'ABSENT' ? 'Absent' : todayRecord ? 'Present' : 'Not checked in';
-    return { employee: emp, status, checkIn: todayRecord?.check_in ?? '—' };
+    const status = onLeave ? 'On leave' : firstSession?.status === 'ABSENT' ? 'Absent' : firstSession?.check_in && firstSession.check_in > '09:15' ? 'Late' : firstSession ? 'Present' : 'Not checked in';
+    const manualReasons = sessions
+      .filter((session) => session.is_manual_entry)
+      .map((session) => session.manual_entry_reason?.trim())
+      .filter((reason): reason is string => Boolean(reason));
+    return {
+      employee: emp,
+      status,
+      checkIn: firstSession?.check_in ?? null,
+      checkOut: lastSession?.check_out ?? null,
+      workedMinutes,
+      manualReason: manualReasons[0] ?? null,
+      isManual: sessions.some((session) => session.is_manual_entry),
+    };
   }), [employees, records, today, leaveRequests]);
 
   const todayAttendanceMetrics = useMemo(() => ({
-    present: todayAttendanceRows.filter((row) => row.status === 'Present').length,
+    present: todayAttendanceRows.filter((row) => row.status === 'Present' || row.status === 'Late').length,
     absent: todayAttendanceRows.filter((row) => row.status === 'Absent').length,
     onLeave: todayAttendanceRows.filter((row) => row.status === 'On leave').length,
     notCheckedIn: todayAttendanceRows.filter((row) => row.status === 'Not checked in').length,
@@ -367,18 +417,18 @@ export default function AttendancePage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          {metricCards.map(([label, value, color]) => <div key={label} className="border bg-white p-4" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-sm)' }}><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-2 text-2xl font-semibold" style={{ color: color as string }}>{value}</p></div>)}
+          {metricCards.map(([label, value, color]) => <div key={label} className="relative overflow-hidden border bg-white p-4" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-sm)' }}><span className="absolute inset-y-0 left-0 w-1" style={{ background: color as string }} /><p className="pl-2 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-2 pl-2 text-2xl font-semibold tabular" style={{ color: color as string }}>{value}</p></div>)}
         </div>
 
-        <section>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Today's attendance</h2>
+        <section className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--line-soft)' }}><div><p className="font-mono text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--status-present)' }}>Live register</p><h2 className="mt-1 text-lg font-semibold" style={{ color: 'var(--ink)' }}>Today's attendance</h2></div><span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{todayAttendanceRows.length} employees · {new Date(`${today}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</span></div>
           <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[['Present', todayAttendanceMetrics.present, 'var(--status-present)'], ['Absent', todayAttendanceMetrics.absent, 'var(--status-absent)'], ['On leave', todayAttendanceMetrics.onLeave, '#2563EB'], ['Not checked in', todayAttendanceMetrics.notCheckedIn, 'var(--text-muted)']].map(([label, value, color]) => <div key={label} className="rounded-lg p-4" style={{ background: 'var(--surface)' }}><p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p><p className="mt-1 text-2xl font-bold" style={{ color: color as string }}>{value}</p></div>)}
+            {[['Present', todayAttendanceMetrics.present, 'var(--status-present)', 'var(--status-present-bg)'], ['Absent', todayAttendanceMetrics.absent, 'var(--status-absent)', 'var(--status-absent-bg)'], ['On leave', todayAttendanceMetrics.onLeave, '#2563EB', '#EFF6FF'], ['Not checked in', todayAttendanceMetrics.notCheckedIn, 'var(--text-muted)', 'var(--status-neutral-bg)']].map(([label, value, color, background]) => <div key={label} className="border p-4" style={{ borderColor: 'var(--line-soft)', background: background as string, borderRadius: 'var(--radius-sm)' }}><div className="flex items-center justify-between"><p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</p><span className="h-2 w-2 rounded-full" style={{ background: color as string }} /></div><p className="mt-2 text-2xl font-bold tabular" style={{ color: color as string }}>{value}</p></div>)}
           </div>
-          <div className="mt-3 overflow-hidden rounded-lg bg-white" style={{ border: '1px solid var(--line-soft)' }}>
-            <table className="w-full text-left text-sm">
-              <thead style={{ background: 'var(--paper)' }}><tr><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Employee</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Department</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Status</th><th className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Check-in</th></tr></thead>
-              <tbody>{todayAttendanceRows.map((row) => { const statusColor = row.status === 'Present' ? 'var(--status-present)' : row.status === 'Absent' ? 'var(--status-absent)' : row.status === 'On leave' ? '#2563EB' : 'var(--text-muted)'; return <tr key={row.employee.id} className="border-t" style={{ borderColor: 'var(--line-soft)' }}><td className="px-4 py-2.5 font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-4 py-2.5" style={{ color: 'var(--text-secondary)' }}>{departments.find((department) => department.id === row.employee.department_id)?.name ?? '—'}</td><td className="px-4 py-2.5 font-medium" style={{ color: statusColor }}>{row.status}</td><td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{row.checkIn}</td></tr>; })}</tbody>
+          <div className="mt-4 overflow-x-auto border-t" style={{ borderColor: 'var(--line-soft)' }}>
+            <table className="w-full min-w-[820px] text-left text-sm">
+              <thead style={{ background: 'var(--paper)' }}><tr><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Employee</th><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check In</th><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check Out</th><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Hours</th><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Status</th><th className="px-5 py-3 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Manual Entry Reason</th></tr></thead>
+              <tbody>{todayAttendanceRows.map((row) => { const statusColor = row.status === 'Present' ? 'var(--status-present)' : row.status === 'Late' ? '#D97706' : row.status === 'Absent' || row.status === 'Not checked in' ? 'var(--status-absent)' : row.status === 'On leave' ? '#2563EB' : 'var(--text-muted)'; return <tr key={row.employee.id} className="border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)' }}><td className="px-5 py-3.5 font-medium" style={{ color: 'var(--ink)' }}>{row.employee.name}</td><td className="px-5 py-3.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{formatAttendanceTime(row.checkIn)}</td><td className="px-5 py-3.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{formatAttendanceTime(row.checkOut)}</td><td className="px-5 py-3.5 font-mono text-xs font-medium" style={{ color: row.workedMinutes ? 'var(--ink)' : 'var(--text-muted)' }}>{formatDurationLabel(row.workedMinutes)}</td><td className="px-5 py-3.5"><span className="inline-flex items-center gap-2 border px-2 py-1 text-xs font-medium" style={{ color: statusColor, borderColor: `${statusColor}55`, background: `${statusColor}0D`, borderRadius: 'var(--radius-sm)' }}><span className="h-2 w-2 rounded-full" style={{ background: statusColor }} />{row.status}</span></td><td className="max-w-[22rem] px-5 py-3.5 text-xs" style={{ color: row.isManual ? '#B45309' : 'var(--text-muted)' }}>{row.isManual ? <span className="inline-flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: '#D97706' }} />{row.manualReason ?? 'Reason required'}</span> : '—'}</td></tr>; })}</tbody>
             </table>
           </div>
         </section>
@@ -834,6 +884,16 @@ export default function AttendancePage() {
                         <option key={mode} value={mode}>{mode}</option>
                       ))}
                     </select>
+                    <input
+                      required
+                      value={manualForm.manual_entry_reason}
+                      onChange={(e) => setManualForm((prev) => ({ ...prev, manual_entry_reason: e.target.value }))}
+                      placeholder="Reason for manual entry"
+                      className="w-full border px-3 py-2 text-sm"
+                      style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
+                    />
+                    {manualForm.check_out < STANDARD_SHIFT_END && <input required value={manualForm.early_checkout_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, early_checkout_reason: e.target.value }))} placeholder="Early checkout reason" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />}
+                    {(Math.max(0, Math.round((hoursBetween(manualForm.check_in, manualForm.check_out) ?? 0) * 60) - 9 * 60) > 0) && <input required value={manualForm.overtime_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, overtime_reason: e.target.value }))} placeholder="Overtime reason" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />}
                     <button type="submit" className="w-full px-3 py-2 text-sm font-medium" style={{ background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>
                       Save entry
                     </button>

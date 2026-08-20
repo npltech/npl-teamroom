@@ -34,6 +34,7 @@ export default function TaskDetailsPage() {
     const [commentInput, setCommentInput] = useState('');
 
     const assigneeName = task ? employees.find((employee) => employee.id === task.assigned_to)?.name ?? 'Unknown' : 'Unknown';
+    const assignedByName = task ? employees.find((employee) => employee.id === task.assigned_by)?.name ?? 'Unknown' : 'Unknown';
     const clientName = task ? clients.find((client) => client.id === task.client_id)?.name : undefined;
     const projectName = task ? projects.find((project) => project.id === task.project_id)?.name : undefined;
     const currentUser = users.find((user) => user.role === role)?.name ?? 'Current user';
@@ -73,7 +74,7 @@ export default function TaskDetailsPage() {
                     <div>
                         <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--status-pending)' }}>Task details</p>
                         <h1 className="font-display mt-1 text-3xl font-semibold" style={{ color: 'var(--ink)' }}>{task.title}</h1>
-                        <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Assigned to {assigneeName}</p>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Assigned to {assigneeName} · Assigned by {assignedByName}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <span className="font-mono px-2 py-1 text-[11px] uppercase" style={{ background: `${STATUS_COLOR[task.status]}20`, color: STATUS_COLOR[task.status], borderRadius: 'var(--radius-sm)' }}>{STATUS_LABEL[task.status]}</span>

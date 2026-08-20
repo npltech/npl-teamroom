@@ -30,6 +30,7 @@ const SEED_LEAVE: LeaveRequest[] = [
   { id: 'l3', employee_id: 'e9', type: 'Casual', start_date: daysAgo(-4), end_date: daysAgo(-4), reason: 'Personal errand', status: 'REJECTED', requested_at: daysAgo(5) },
   { id: 'l4', employee_id: 'e7', type: 'Annual', start_date: daysAgo(-14), end_date: daysAgo(-12), reason: 'Sister\u2019s wedding', status: 'PENDING', requested_at: daysAgo(2) },
   { id: 'l5', employee_id: 'e4', type: 'Sick', start_date: daysAgo(-1), end_date: daysAgo(-1), reason: 'Doctor\u2019s appointment', status: 'PENDING', requested_at: daysAgo(0) },
+  { id: 'l6', employee_id: 'e4', type: 'Casual', start_date: daysAgo(0), end_date: daysAgo(0), reason: 'Personal day', status: 'APPROVED', requested_at: daysAgo(1) },
 ];
 
 function load(): LeaveRequest[] {
@@ -39,7 +40,8 @@ function load(): LeaveRequest[] {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_LEAVE));
       return SEED_LEAVE;
     }
-    return JSON.parse(raw) as LeaveRequest[];
+    const stored = JSON.parse(raw) as LeaveRequest[];
+    return stored.some((request) => request.id === 'l6') ? stored : [...stored, SEED_LEAVE[SEED_LEAVE.length - 1]];
   } catch {
     return SEED_LEAVE;
   }
