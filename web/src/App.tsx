@@ -18,6 +18,8 @@ import UsersPage from './pages/UsersPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import EventDetailPage from './pages/EventDetailPage';
 import EmployeeAttendanceDetailPage from './pages/EmployeeAttendanceDetailPage';
+import RecruitmentPage from './pages/RecruitmentPage';
+import OnboardingPage from './pages/OnboardingPage';
 import AppShell from './layouts/AppShell';
 
 export default function App() {
@@ -44,6 +46,9 @@ export default function App() {
           <Route path="tasks" element={<TasksPage />} />
           <Route path="tasks/:id" element={<TaskDetailsPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="recruitment" element={<RecruitmentPage />} />
+          <Route path="candidates" element={<RecruitmentPage />} />
+          <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Routes>

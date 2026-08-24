@@ -73,11 +73,29 @@ const TODAY_SAMPLE_ATTENDANCE: Partial<AttendanceRecord>[] = [
   { id: 'today-e9', employee_id: 'e9', date: daysAgo(0), check_in: '09:06', check_out: '18:01', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
 ];
 
+const EMPLOYEE_MONTH_SAMPLE_ATTENDANCE: Partial<AttendanceRecord>[] = [
+  { id: 'aug-e3-01', employee_id: 'e3', date: '2026-08-03', check_in: '09:06', check_out: '18:02', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-02', employee_id: 'e3', date: '2026-08-04', check_in: '09:18', check_out: '17:55', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-03', employee_id: 'e3', date: '2026-08-05', check_in: '08:58', check_out: '18:10', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-04', employee_id: 'e3', date: '2026-08-06', check_in: '09:11', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-05', employee_id: 'e3', date: '2026-08-07', check_in: '09:03', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-06', employee_id: 'e3', date: '2026-08-10', check_in: '09:14', check_out: '18:06', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-07', employee_id: 'e3', date: '2026-08-11', check_in: '09:00', check_out: '17:40', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-08', employee_id: 'e3', date: '2026-08-12', check_in: '09:09', check_out: '18:12', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-09', employee_id: 'e3', date: '2026-08-13', check_in: '09:21', check_out: '17:52', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-10', employee_id: 'e3', date: '2026-08-14', check_in: '09:05', check_out: '18:04', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-11', employee_id: 'e3', date: '2026-08-17', check_in: '09:08', check_out: '17:58', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-12', employee_id: 'e3', date: '2026-08-18', check_in: '09:16', check_out: '18:01', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-13', employee_id: 'e3', date: '2026-08-19', check_in: '09:02', check_out: '17:46', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-14', employee_id: 'e3', date: '2026-08-20', check_in: '09:12', check_out: '18:08', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+  { id: 'aug-e3-15', employee_id: 'e3', date: '2026-08-21', check_in: '09:07', check_out: '17:54', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
+];
+
 function load(): AttendanceRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const seeded = [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE].map(normalizeRecord);
+      const seeded = [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE, ...EMPLOYEE_MONTH_SAMPLE_ATTENDANCE].map(normalizeRecord);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
       return seeded;
     }
@@ -88,9 +106,10 @@ function load(): AttendanceRecord[] {
       const employeeRecords = todayRecords.filter((record) => record.employee_id === sample.employee_id);
       return sample.check_in ? !employeeRecords.some((record) => record.check_in) : employeeRecords.length === 0;
     });
-    return [...stored, ...missingSamples].map(normalizeRecord);
+    const missingEmployeeMonthSamples = EMPLOYEE_MONTH_SAMPLE_ATTENDANCE.filter((sample) => !stored.some((record) => record.id === sample.id));
+    return [...stored, ...missingSamples, ...missingEmployeeMonthSamples].map(normalizeRecord);
   } catch {
-    return [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE].map(normalizeRecord);
+    return [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE, ...EMPLOYEE_MONTH_SAMPLE_ATTENDANCE].map(normalizeRecord);
   }
 }
 

@@ -122,7 +122,7 @@ export default function AttendancePage() {
       const status = holidaySet.has(iso) ? 'holiday' : isApprovedLeave ? 'leave' : sessions.length > 0 ? 'present' : 'absent';
 
       return { iso, sessions, total: Number(total.toFixed(1)), status };
-    }).sort((a, b) => b.iso.localeCompare(a.iso));
+    }).sort((a, b) => a.iso.localeCompare(b.iso));
   }, [year, month, targetEmployee, targetSessions, holidaySet, leaveRequests]);
 
   const selectedDaySessions = useMemo(() => {
@@ -714,7 +714,7 @@ export default function AttendancePage() {
                 </div>
               </div>
 
-              <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+              <div className="overflow-hidden border bg-white shadow-sm" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: 'var(--line-soft)' }}>
                   <div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-secondary)' }}>{monthLabel}</p>
@@ -749,33 +749,51 @@ export default function AttendancePage() {
                   </div>
                 </div>
 
-                <div className="divide-y" style={{ borderColor: 'var(--line-soft)' }}>
-                  {monthlyAttendance.map((day) => {
-                    const isSelected = selectedDate === day.iso;
-                    const isToday = day.iso === today;
-                    const statusLabel = day.status === 'holiday' ? 'Holiday' : day.status === 'leave' ? 'Leave' : day.status === 'present' ? 'Present' : 'Absent';
-                    const statusColor = day.status === 'holiday' ? '#8B5CF6' : day.status === 'leave' ? '#F59E0B' : day.status === 'present' ? '#22C55E' : 'var(--status-absent)';
+                <div className="overflow-x-auto">
+                  <div className="min-w-[920px]">
+                    <div className="grid grid-cols-[24%_17%_17%_14%_28%] border-b px-4 py-3 sm:px-5" style={{ background: 'var(--paper)', borderColor: 'var(--line-soft)' }}>
+                      <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Date</span>
+                      <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check In</span>
+                      <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check Out</span>
+                      <span className="text-right font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Hours</span>
+                      <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Manual Entry Reason</span>
+                    </div>
+                    {monthlyAttendance.map((day) => {
+                      const isSelected = selectedDate === day.iso;
+                      const isToday = day.iso === today;
+                      const statusColor = day.status === 'holiday' ? '#8B5CF6' : day.status === 'leave' ? '#F59E0B' : day.status === 'present' ? '#22C55E' : 'var(--status-absent)';
+                      const rowBackground = day.status === 'present' ? '#F0FDF4' : day.status === 'absent' ? '#FFF1F2' : day.status === 'holiday' ? '#F5F3FF' : '#FFFBEB';
+                      const rowAccent = day.status === 'present' ? '#22C55E' : day.status === 'absent' ? '#EF4444' : statusColor;
+                      const firstSession = day.sessions[0];
+                      const lastSession = day.sessions[day.sessions.length - 1];
+                      const manualReason = day.sessions.find((session) => session.is_manual_entry && session.manual_entry_reason)?.manual_entry_reason ?? null;
 
-                    return (
-                      <button
-                        key={day.iso}
-                        onClick={() => setSelectedDate(day.iso)}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--paper)] sm:gap-5"
-                        style={{ background: isSelected ? 'rgba(100, 116, 139, 0.08)' : isToday ? 'rgba(99, 102, 241, 0.04)' : '#fff' }}
-                      >
-                        <span className="w-28 shrink-0 text-sm font-medium sm:w-36" style={{ color: 'var(--ink)' }}>
-                          {new Date(`${day.iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}
-                        </span>
-                        <span className="flex min-w-0 items-center gap-2 text-xs uppercase tracking-wide" style={{ color: statusColor }}>
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: statusColor }} />
-                          {statusLabel}
-                        </span>
-                        <span className="ml-auto shrink-0 font-mono text-xs" style={{ color: day.total > 0 ? 'var(--ink)' : 'var(--text-muted)' }}>
-                          {day.total > 0 ? `${day.total.toFixed(1)}h` : '—'}
-                        </span>
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={day.iso}
+                          onClick={() => setSelectedDate(day.iso)}
+                          className="grid w-full grid-cols-[24%_17%_17%_14%_28%] items-center border-t px-4 py-3.5 text-left transition-colors hover:bg-[var(--paper)] sm:px-5"
+                          style={{ borderColor: 'var(--line-soft)', background: rowBackground, borderLeft: isSelected || isToday ? `3px solid ${rowAccent}` : '3px solid transparent' }}
+                        >
+                          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
+                            {new Date(`${day.iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}{isToday && <span className="ml-2 inline-flex border px-1.5 py-0.5 align-middle font-mono text-[9px] font-semibold tracking-wide" style={{ borderColor: '#60A5FA', color: '#2563EB', borderRadius: 'var(--radius-sm)' }}>TODAY</span>}
+                          </span>
+                          <span className="font-mono text-xs" style={{ color: firstSession?.check_in ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                            {firstSession?.check_in ?? '—'}
+                          </span>
+                          <span className="font-mono text-xs" style={{ color: lastSession?.check_out ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                            {lastSession?.check_out ?? '—'}
+                          </span>
+                          <span className="text-right font-mono text-xs font-medium tabular-nums" style={{ color: day.total > 0 ? 'var(--ink)' : 'var(--text-muted)' }}>
+                            {day.total > 0 ? `${day.total.toFixed(1)}h` : '—'}
+                          </span>
+                          <span className="max-w-0 truncate text-xs" style={{ color: manualReason ? 'var(--ink)' : 'var(--text-muted)' }} title={manualReason ?? undefined}>
+                            {manualReason ?? '—'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
