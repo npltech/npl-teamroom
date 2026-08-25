@@ -1,15 +1,14 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { ROLE_LABEL, type Role } from '../data/roles';
-import { useCurrentEmployee } from '../data/currentUser';
 import { useDepartments } from '../data/departments';
 import { useDesignations } from '../data/designations';
 import { useEmployees, type Gender } from '../data/employees';
-import { useUsers } from '../data/users';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import { Drawer } from '../components/Drawer';
 import { useEffect, useMemo, useState } from 'react';
 
-const ALL_ROLES: Role[] = ['SUPER_ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'];
 const PROFILE_OVERRIDES_KEY = 'roster.profile-overrides';
 const GENDERS: Gender[] = ['Male', 'Female', 'Other', 'Prefer not to say'];
 
@@ -18,10 +17,13 @@ type ProfileOverrides = Partial<Record<Role, ProfileOverride>>;
 
 export default function AppShell() {
   const navigate = useNavigate();
-  const [role, setRole] = useState<Role>('EMPLOYEE');
-  const employee = useCurrentEmployee(role);
+  const { profile, signOut: authSignOut } = useAuth();
+  const role: Role = profile?.role ?? 'EMPLOYEE';
   const { employees, updateEmployee } = useEmployees();
-  const { users, updatePassword } = useUsers();
+  const employee = useMemo(
+    () => (profile?.employee_id ? employees.find((e) => e.id === profile.employee_id) ?? null : null),
+    [employees, profile],
+  );
   const { departments } = useDepartments();
   const { designations } = useDesignations();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -44,12 +46,11 @@ export default function AppShell() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
-  const account = useMemo(() => users.find((user) => user.role === role) ?? null, [users, role]);
   const override = profileOverrides[role] ?? {};
-  const profileEmployee = employee ?? (account?.employee_id ? employees.find((item) => item.id === account.employee_id) ?? null : null);
-  const profileNameDisplay = override.name ?? profileEmployee?.name ?? account?.name ?? ROLE_LABEL[role];
-  const profileEmail = profileEmployee?.email ?? account?.email ?? '—';
-  const profileUsername = profileEmployee?.employee_code ?? account?.email ?? '—';
+  const profileEmployee = employee;
+  const profileNameDisplay = override.name ?? profileEmployee?.name ?? profile?.name ?? ROLE_LABEL[role];
+  const profileEmail = profileEmployee?.email ?? profile?.email ?? '—';
+  const profileUsername = profileEmployee?.employee_code ?? profile?.email ?? '—';
   const profileInitials = profileNameDisplay.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'U';
 
   function openProfile() {
@@ -80,7 +81,7 @@ export default function AppShell() {
     setPasswordError('');
   }
 
-  function savePassword(event: React.FormEvent) {
+  async function savePassword(event: React.FormEvent) {
     event.preventDefault();
     if (newPassword.length < 8) {
       setPasswordError('New password must be at least 8 characters.');
@@ -90,8 +91,21 @@ export default function AppShell() {
       setPasswordError('New passwords must match.');
       return;
     }
-    if (!account || !updatePassword(account.id, currentPassword, newPassword)) {
+    if (!profile?.email) {
+      setPasswordError('Could not determine your account email.');
+      return;
+    }
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: profile.email,
+      password: currentPassword,
+    });
+    if (reauthError) {
       setPasswordError('Current password is incorrect.');
+      return;
+    }
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateError) {
+      setPasswordError(updateError.message);
       return;
     }
     setPasswordError('');
@@ -126,19 +140,12 @@ export default function AppShell() {
     window.setTimeout(() => setProfileSuccess(false), 3000);
   }
 
-  useEffect(() => {
-    const stored = localStorage.getItem('roster.role') as Role | null;
-    if (stored) setRole(stored);
-    else navigate('/login');
-  }, [navigate]);
+  // ProtectedRoute already guarantees a session exists before this mounts;
+  // nothing to redirect here.
+  useEffect(() => {}, []);
 
-  function switchRole(next: Role) {
-    localStorage.setItem('roster.role', next);
-    setRole(next);
-  }
-
-  function signOut() {
-    localStorage.removeItem('roster.role');
+  async function signOut() {
+    await authSignOut();
     navigate('/login');
   }
 
@@ -166,23 +173,12 @@ export default function AppShell() {
             >
               {profileInitials}
             </button>
-            <label className="flex items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                Preview role
-              </span>
-              <select
-                value={role}
-                onChange={(e) => switchRole(e.target.value as Role)}
-                className="border px-2.5 py-1.5 font-mono text-xs"
-                style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
-              >
-                {ALL_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <span
+              className="font-mono text-[10px] uppercase tracking-wide"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              {ROLE_LABEL[role]}
+            </span>
             <button
               onClick={signOut}
               className="border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--paper)]"

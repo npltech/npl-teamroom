@@ -1,31 +1,27 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RosterStrip } from '../components/RosterStrip';
-import type { Role } from '../data/roles';
-
-const DEMO_ROLES: { role: Role; email: string }[] = [
-  { role: 'SUPER_ADMIN', email: 'admin@roster.io' },
-  { role: 'HR', email: 'hr@roster.io' },
-  { role: 'MANAGER', email: 'manager@roster.io' },
-  { role: 'EMPLOYEE', email: 'employee@roster.io' },
-];
+import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const match = DEMO_ROLES.find((d) => d.email === email.trim().toLowerCase());
-    localStorage.setItem('roster.role', match?.role ?? 'EMPLOYEE');
+    setError('');
+    setSubmitting(true);
+    const { error: signInError } = await signIn(email.trim(), password);
+    setSubmitting(false);
+    if (signInError) {
+      setError(signInError);
+      return;
+    }
     navigate('/dashboard');
-  }
-
-  function quickFill(role: Role) {
-    const demo = DEMO_ROLES.find((d) => d.role === role)!;
-    setEmail(demo.email);
-    setPassword('••••••••');
   }
 
   return (
@@ -86,33 +82,21 @@ export default function LoginPage() {
               />
             </label>
 
+            {error && (
+              <p className="text-sm" style={{ color: 'var(--status-absent)' }}>
+                {error}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="w-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
+              disabled={submitting}
+              className="w-full py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}
             >
-              Sign in
+              {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-
-          <div className="mt-8 border-t pt-6" style={{ borderColor: 'var(--line-soft)' }}>
-            <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Preview a role (POC demo)
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {DEMO_ROLES.map((d) => (
-                <button
-                  key={d.role}
-                  type="button"
-                  onClick={() => quickFill(d.role)}
-                  className="border px-3 py-1.5 font-mono text-xs transition-colors hover:bg-white"
-                  style={{ borderColor: 'var(--line)', color: 'var(--text-secondary)', borderRadius: 'var(--radius-sm)' }}
-                >
-                  {d.role}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>

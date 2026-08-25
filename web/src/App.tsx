@@ -21,13 +21,21 @@ import EmployeeAttendanceDetailPage from './pages/EmployeeAttendanceDetailPage';
 import RecruitmentPage from './pages/RecruitmentPage';
 import OnboardingPage from './pages/OnboardingPage';
 import AppShell from './layouts/AppShell';
+import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<AppShell />}>
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <AppShell />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="holidays" element={<HolidaysPage />} />
