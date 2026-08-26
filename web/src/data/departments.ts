@@ -1,49 +1,60 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export interface Department {
-  id: string;
-  name: string;
-}
-
-const STORAGE_KEY = 'roster.departments';
-
-const SEED_DEPARTMENTS: Department[] = [
-  { id: 'd1', name: 'Engineering' },
-  { id: 'd2', name: 'Sales' },
-  { id: 'd3', name: 'Finance' },
-  { id: 'd4', name: 'Marketing' },
-  { id: 'd5', name: 'Human Resources' },
-  { id: 'd6', name: 'Design' },
-  { id: 'd7', name: 'Operations' },
-];
-
-function load(): Department[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DEPARTMENTS));
-      return SEED_DEPARTMENTS;
-    }
-    return JSON.parse(raw) as Department[];
-  } catch {
-    return SEED_DEPARTMENTS;
-  }
+    id: string;
+    name: string;
 }
 
 export function useDepartments() {
-  const [departments, setDepartments] = useState<Department[]>(() => load());
+    const [departments, setDepartments] = useState<Department[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(departments));
-  }, [departments]);
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        const { data, error: fetchError } = await supabase
+            .from('departments')
+            .select('id, name')
+            .order('name', { ascending: true });
+        if (fetchError) {
+            setError(fetchError.message);
+        } else {
+            setError(null);
+            setDepartments(data ?? []);
+        }
+        setLoading(false);
+    }, []);
 
-  const addDepartment = useCallback((name: string) => {
-    setDepartments((prev) => [...prev, { id: crypto.randomUUID(), name }]);
-  }, []);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
 
-  const removeDepartment = useCallback((id: string) => {
-    setDepartments((prev) => prev.filter((d) => d.id !== id));
-  }, []);
+    const addDepartment = useCallback(
+        async (name: string) => {
+            const { data, error: insertError } = await supabase
+                .from('departments')
+                .insert({ name })
+                .select('id, name')
+                .single();
+            if (insertError) {
+                setError(insertError.message);
+                return null;
+            }
+            setDepartments((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+            return data.id;
+        },
+        [],
+    );
 
-  return { departments, addDepartment, removeDepartment };
+    const removeDepartment = useCallback(async (id: string) => {
+        const { error: deleteError } = await supabase.from('departments').delete().eq('id', id);
+        if (deleteError) {
+            setError(deleteError.message);
+            return;
+        }
+        setDepartments((prev) => prev.filter((d) => d.id !== id));
+    }, []);
+
+    return { departments, loading, error, addDepartment, removeDepartment, refresh };
 }

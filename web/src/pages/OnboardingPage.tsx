@@ -52,12 +52,14 @@ export default function OnboardingPage() {
         startOnboarding(candidate, joiningDate);
         setJoinerDrawer(false);
     }
-    function activate(record: OnboardingRecord) {
+    async function activate(record: OnboardingRecord) {
         const candidate = candidates.find((item) => item.id === record.candidate_id);
         if (!candidate) return;
         const department = departments.find((item) => item.name.toLowerCase().includes('engineering')) ?? departments[0];
-        const designation = designations[0];
-        const employeeId = addEmployee({ name: candidate.name, email: candidate.email, phone: candidate.phone, department_id: department?.id ?? '', designation_id: designation?.id ?? '', manager_id: null, joining_date: record.joining_date, employment_status: 'ACTIVE', work_mode: 'OFFICE' });
+        const designation = designations.find((item) => item.department_id === department?.id);
+        if (!department || !designation) return;
+        const employeeId = await addEmployee({ name: candidate.name, email: candidate.email, phone: candidate.phone, department_id: department?.id ?? '', designation_id: designation?.id ?? '', manager_id: null, joining_date: record.joining_date, employment_status: 'ACTIVE', work_mode: 'OFFICE' });
+        if (!employeeId) return;
         activateEmployee(record.id, employeeId);
         updateCandidate(record.candidate_id, { stage: 'HIRED' });
     }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useEmployees } from '../data/employees';
-import { formatHolidayDate, resolveEventImage, useHolidays, type HolidayCategory } from '../data/holidays';
+import { formatHolidayDate, getComputedEmployeeEvents, resolveEventImage, stripMarkdown, useHolidays, type HolidayCategory } from '../data/holidays';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -16,7 +16,8 @@ type CalendarRow = {
   description?: string | null;
   image?: string | null;
   readOnly: boolean;
-  source: 'manual' | 'generated';
+  source: 'manual' | 'computed';
+  employeeId?: string;
 };
 
 const FILTERS: FilterKey[] = ['ALL', 'Holiday', 'Announcement', 'Birthday', 'Anniversary'];
@@ -42,7 +43,7 @@ export default function HolidaysPage() {
   const { role } = useOutletContext<Ctx>();
   const canManage = role === 'SUPER_ADMIN' || role === 'HR';
   const { holidays, addHoliday, updateHoliday, removeHoliday } = useHolidays();
-  const { employees } = useEmployees();
+  const { employees, updateEmployee } = useEmployees();
 
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
@@ -50,6 +51,9 @@ export default function HolidaysPage() {
   const [category, setCategory] = useState<HolidayCategory>('Company Holiday');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [messageError, setMessageError] = useState('');
   const [filter, setFilter] = useState<FilterKey>('ALL');
 
   function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -66,41 +70,18 @@ export default function HolidaysPage() {
   }
 
   const generatedRows = useMemo<CalendarRow[]>(() => {
-    const rows: CalendarRow[] = [];
-    const thisYear = new Date().getFullYear();
-
-    employees.forEach((employee) => {
-      if (employee.date_of_birth) {
-        const dob = new Date(`${employee.date_of_birth}T00:00:00`);
-        const birthday = new Date(thisYear, dob.getMonth(), dob.getDate());
-        rows.push({
-          id: `birthday-${employee.id}`,
-          date: birthday.toISOString().slice(0, 10),
-          name: `${employee.name}'s birthday`,
-          kind: 'Birthday',
-          group: 'Birthday',
-          readOnly: true,
-          source: 'generated',
-        });
-      }
-
-      const joined = new Date(`${employee.joining_date}T00:00:00`);
-      const years = thisYear - joined.getFullYear();
-      if (years > 0) {
-        const anniversary = new Date(thisYear, joined.getMonth(), joined.getDate());
-        rows.push({
-          id: `anniversary-${employee.id}`,
-          date: anniversary.toISOString().slice(0, 10),
-          name: `${employee.name}'s ${years}-year work anniversary`,
-          kind: 'Anniversary',
-          group: 'Anniversary',
-          readOnly: true,
-          source: 'generated',
-        });
-      }
-    });
-
-    return rows;
+    return employees.flatMap((employee) => getComputedEmployeeEvents(employee)).map((event) => ({
+      id: event.id,
+      date: event.date,
+      name: event.name,
+      kind: event.kind,
+      group: event.category,
+      description: event.description,
+      image: event.image,
+      readOnly: true,
+      source: 'computed',
+      employeeId: event.employeeId,
+    }));
   }, [employees]);
 
   const combined = useMemo<CalendarRow[]>(() => {
@@ -162,6 +143,25 @@ export default function HolidaysPage() {
     setDescription(row.description ?? '');
     setCategory(row.group as HolidayCategory);
     setImagePreview(row.image ?? null);
+  }
+
+  function startMessageEdit(row: CalendarRow) {
+    setEditingMessageId(row.id);
+    setMessageDraft(row.description ?? '');
+    setMessageError('');
+  }
+
+  async function saveMessage(row: CalendarRow) {
+    if (!row.employeeId) return;
+    const field = row.kind === 'Birthday' ? 'birthday_message' : 'anniversary_message';
+    const error = await updateEmployee(row.employeeId, { [field]: messageDraft.trim() || null });
+    if (error) {
+      setMessageError(error);
+      return;
+    }
+    setEditingMessageId(null);
+    setMessageDraft('');
+    setMessageError('');
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -245,8 +245,8 @@ export default function HolidaysPage() {
                         {row.name}
                       </p>
                       {row.description && (
-                        <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {row.description}
+                        <p className="mt-1 line-clamp-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {stripMarkdown(row.description)}
                         </p>
                       )}
                       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -259,7 +259,10 @@ export default function HolidaysPage() {
                     {canManage && row.source === 'manual' && (
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleEdit(row)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleEdit(row);
+                          }}
                           className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                           style={{ color: 'var(--accent-holiday)' }}
                           aria-label={`Edit ${row.name}`}
@@ -267,13 +270,47 @@ export default function HolidaysPage() {
                           Edit
                         </button>
                         <button
-                          onClick={() => removeHoliday(row.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeHoliday(row.id);
+                          }}
                           className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                           style={{ color: 'var(--status-absent)' }}
                           aria-label={`Remove ${row.name}`}
                         >
                           Remove
                         </button>
+                      </div>
+                    )}
+                    {canManage && row.source === 'computed' && (
+                      <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                        {editingMessageId === row.id ? (
+                          <div className="flex items-center gap-2">
+                            <textarea
+                              value={messageDraft}
+                              onChange={(event) => setMessageDraft(event.target.value)}
+                              rows={2}
+                              className="w-48 border px-2 py-1 text-xs outline-none"
+                              style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
+                            />
+                            {messageError && <span className="text-[11px]" style={{ color: 'var(--status-absent)' }}>{messageError}</span>}
+                            <button
+                              onClick={() => saveMessage(row)}
+                              className="font-mono text-[11px] uppercase tracking-wide hover:underline"
+                              style={{ color: 'var(--accent-holiday)' }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => startMessageEdit(row)}
+                            className="font-mono text-[11px] uppercase tracking-wide hover:underline"
+                            style={{ color: 'var(--accent-holiday)' }}
+                          >
+                            Edit message
+                          </button>
+                        )}
                       </div>
                     )}
                   </li>

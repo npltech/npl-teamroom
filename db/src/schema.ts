@@ -4,6 +4,7 @@ import {
   pgEnum,
   uuid,
   text,
+  boolean,
   date,
   timestamp,
   pgPolicy,
@@ -18,6 +19,14 @@ export const appRoleEnum = pgEnum('app_role', ['SUPER_ADMIN', 'HR', 'MANAGER', '
 export const employmentStatusEnum = pgEnum('employment_status', ['ACTIVE', 'INACTIVE']);
 export const workModeEnum = pgEnum('work_mode', ['OFFICE', 'WFH', 'HYBRID']);
 export const genderEnum = pgEnum('gender_type', ['Male', 'Female', 'Other', 'Prefer not to say']);
+export const holidayCategoryEnum = pgEnum('holiday_category', [
+  'National Holiday',
+  'Optional Holiday',
+  'Company Holiday',
+  'Announcement',
+]);
+export const leaveTypeEnum = pgEnum('leave_type', ['Casual', 'Sick', 'Annual', 'Other']);
+export const leaveStatusEnum = pgEnum('leave_status', ['PENDING', 'APPROVED', 'REJECTED']);
 
 // A single reusable "is this user SUPER_ADMIN or HR" check, inlined into
 // policies below. Kept as a template string (not a DB function) so every
@@ -27,6 +36,8 @@ const isAdminOrHr = sql`exists (
   select 1 from public.profiles p
   where p.id = auth.uid() and p.role in ('SUPER_ADMIN', 'HR')
 )`;
+
+const isManagerOf = (employeeId: unknown) => sql`public.is_manager_of(${employeeId})`;
 
 // ─────────────────────────────────────────────────────────────
 // departments
@@ -60,7 +71,8 @@ export const designations = pgTable(
   'designations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    name: text('name').notNull().unique(),
+    name: text('name').notNull(),
+    departmentId: uuid('department_id').notNull().references(() => departments.id, { onDelete: 'restrict' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   () => [
@@ -70,6 +82,35 @@ export const designations = pgTable(
       using: sql`true`,
     }),
     pgPolicy('designations_write_admin_hr', {
+      for: 'all',
+      to: authenticatedRole,
+      using: isAdminOrHr,
+      withCheck: isAdminOrHr,
+    }),
+  ],
+).enableRLS();
+
+// ─────────────────────────────────────────────────────────────
+// holidays
+// ─────────────────────────────────────────────────────────────
+export const holidays = pgTable(
+  'holidays',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    date: date('date').notNull(),
+    name: text('name').notNull(),
+    category: holidayCategoryEnum('category').notNull(),
+    description: text('description'),
+    image: text('image'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  () => [
+    pgPolicy('holidays_select_authenticated', {
+      for: 'select',
+      to: authenticatedRole,
+      using: sql`true`,
+    }),
+    pgPolicy('holidays_write_admin_hr', {
       for: 'all',
       to: authenticatedRole,
       using: isAdminOrHr,
@@ -94,6 +135,8 @@ export const employees = pgTable(
     managerId: uuid('manager_id').references((): any => employees.id, { onDelete: 'set null' }),
     joiningDate: date('joining_date').notNull(),
     dateOfBirth: date('date_of_birth'),
+    birthdayMessage: text('birthday_message'),
+    anniversaryMessage: text('anniversary_message'),
     gender: genderEnum('gender'),
     employmentStatus: employmentStatusEnum('employment_status').notNull().default('ACTIVE'),
     workMode: workModeEnum('work_mode').notNull().default('OFFICE'),
@@ -131,6 +174,20 @@ export const employees = pgTable(
           and ${table.id} = p.employee_id
       )`,
     }),
+    pgPolicy('employees_update_self', {
+      for: 'update',
+      to: authenticatedRole,
+      using: sql`exists (
+        select 1 from public.profiles p
+        where p.id = auth.uid()
+          and p.employee_id = ${table.id}
+      )`,
+      withCheck: sql`exists (
+        select 1 from public.profiles p
+        where p.id = auth.uid()
+          and p.employee_id = ${table.id}
+      )`,
+    }),
   ],
 ).enableRLS();
 
@@ -146,6 +203,8 @@ export const profiles = pgTable(
     email: text('email').notNull(),
     role: appRoleEnum('role').notNull().default('EMPLOYEE'),
     employeeId: uuid('employee_id').references(() => employees.id, { onDelete: 'set null' }),
+    loginEnabled: boolean('login_enabled').notNull().default(true),
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -168,6 +227,58 @@ export const profiles = pgTable(
       to: authenticatedRole,
       using: sql`${table.id} = auth.uid()`,
       withCheck: sql`${table.id} = auth.uid()`,
+    }),
+  ],
+).enableRLS();
+
+// ─────────────────────────────────────────────────────────────
+// leave_requests
+// ─────────────────────────────────────────────────────────────
+export const leaveRequests = pgTable(
+  'leave_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+    type: leaveTypeEnum('type').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    reason: text('reason').notNull(),
+    status: leaveStatusEnum('status').notNull().default('PENDING'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references(() => profiles.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('leave_requests_employee_id_idx').on(table.employeeId),
+    pgPolicy('leave_select_own_or_manager_or_admin', {
+      for: 'select',
+      to: authenticatedRole,
+      using: sql`(
+        exists (
+          select 1 from public.profiles p
+          where p.id = auth.uid() and p.employee_id = ${table.employeeId}
+        )
+        or ${isManagerOf(table.employeeId)}
+        or ${isAdminOrHr}
+      )`,
+    }),
+    pgPolicy('leave_insert_self_manager_or_admin', {
+      for: 'insert',
+      to: authenticatedRole,
+      withCheck: sql`(
+        exists (
+          select 1 from public.profiles p
+          where p.id = auth.uid() and p.employee_id = ${table.employeeId}
+        )
+        or ${isManagerOf(table.employeeId)}
+        or ${isAdminOrHr}
+      )`,
+    }),
+    pgPolicy('leave_update_manager_or_admin_only', {
+      for: 'update',
+      to: authenticatedRole,
+      using: sql`${isManagerOf(table.employeeId)} or ${isAdminOrHr}`,
+      withCheck: sql`${isManagerOf(table.employeeId)} or ${isAdminOrHr}`,
     }),
   ],
 ).enableRLS();

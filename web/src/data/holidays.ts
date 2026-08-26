@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import type { Employee } from './employees';
 
 export type HolidayCategory = 'National Holiday' | 'Optional Holiday' | 'Company Holiday' | 'Announcement';
+const REAL_HOLIDAY_CATEGORIES: HolidayCategory[] = ['National Holiday', 'Optional Holiday', 'Company Holiday'];
 
 export interface Holiday {
   id: string;
@@ -9,6 +12,71 @@ export interface Holiday {
   category: HolidayCategory;
   description?: string | null;
   image?: string | null;
+}
+
+export function countHolidaysThisYear(holidays: Holiday[], year = new Date().getFullYear()): number {
+  return holidays.filter((holiday) => {
+    return holiday.date.startsWith(`${year}-`) && REAL_HOLIDAY_CATEGORIES.includes(holiday.category);
+  }).length;
+}
+
+export type ComputedEventKind = 'Birthday' | 'Anniversary';
+
+export type ComputedEmployeeEvent = {
+  id: string;
+  date: string;
+  name: string;
+  category: ComputedEventKind;
+  description: string;
+  image: null;
+  employeeId: string;
+  kind: ComputedEventKind;
+};
+
+function dateParts(value: string): { month: number; day: number; year: number } {
+  const [year, month, day] = value.split('-').map(Number);
+  return { year, month, day };
+}
+
+export function getComputedEmployeeEvents(employee: Employee, today = new Date()): ComputedEmployeeEvent[] {
+  const todayYear = today.getFullYear();
+  const todayMonth = today.getMonth() + 1;
+  const todayDay = today.getDate();
+  const todayIso = `${todayYear}-${String(todayMonth).padStart(2, '0')}-${String(todayDay).padStart(2, '0')}`;
+  const events: ComputedEmployeeEvent[] = [];
+
+  if (employee.date_of_birth) {
+    const birthday = dateParts(employee.date_of_birth);
+    if (birthday.month === todayMonth && birthday.day === todayDay) {
+      events.push({
+        id: `birthday-${employee.id}`,
+        date: todayIso,
+        name: `${employee.name}'s birthday`,
+        category: 'Birthday',
+        description: employee.birthday_message?.trim() || `🎂 Happy Birthday, ${employee.name}! Wishing you a wonderful year ahead.`,
+        image: null,
+        employeeId: employee.id,
+        kind: 'Birthday',
+      });
+    }
+  }
+
+  const joining = dateParts(employee.joining_date);
+  const years = todayYear - joining.year;
+  if (years > 0 && joining.month === todayMonth && joining.day === todayDay) {
+    events.push({
+      id: `anniversary-${employee.id}`,
+      date: todayIso,
+      name: `${employee.name}'s ${years}-year work anniversary`,
+      category: 'Anniversary',
+      description: employee.anniversary_message?.trim() || `🎉 Happy ${years}-year work anniversary, ${employee.name}! Thank you for your dedication.`,
+      image: null,
+      employeeId: employee.id,
+      kind: 'Anniversary',
+    });
+  }
+
+  return events;
 }
 
 export function getEventPlaceholderImage(name: string, category?: string): string {
@@ -57,52 +125,72 @@ export function resolveEventImage(image: string | null | undefined, name: string
   return image || getEventPlaceholderImage(name, category);
 }
 
-const STORAGE_KEY = 'roster.holidays';
-
-const SEED_HOLIDAYS: Holiday[] = [
-  { id: 'h1', date: '2026-08-15', name: 'Independence Day', category: 'National Holiday' },
-  { id: 'h2', date: '2026-10-02', name: 'Gandhi Jayanti', category: 'National Holiday' },
-  { id: 'h3', date: '2026-11-08', name: 'Diwali', category: 'National Holiday' },
-  { id: 'h4', date: '2026-12-25', name: 'Christmas', category: 'National Holiday' },
-  { id: 'h5', date: '2026-09-04', name: 'Founders\u2019 Day', category: 'Company Holiday' },
-];
-
-function loadHolidays(): Holiday[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_HOLIDAYS));
-      return SEED_HOLIDAYS;
-    }
-    return JSON.parse(raw) as Holiday[];
-  } catch {
-    return SEED_HOLIDAYS;
-  }
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}(?:[-*+] |\d+[.)] )/gm, '')
+    .replace(/[*_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function useHolidays() {
-  const [holidays, setHolidays] = useState<Holiday[]>(() => loadHolidays());
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('id, date, name, category, description, image')
+      .order('date', { ascending: true });
+    if (error) {
+      console.error('[Holidays] Could not load holidays:', error);
+      return;
+    }
+    setHolidays((data ?? []) as Holiday[]);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(holidays));
-  }, [holidays]);
+    void refresh();
+  }, [refresh]);
 
-  const addHoliday = useCallback((h: Omit<Holiday, 'id'>) => {
-    setHolidays((prev) =>
-      [...prev, { ...h, id: crypto.randomUUID() }].sort((a, b) => a.date.localeCompare(b.date)),
-    );
+  const addHoliday = useCallback(async (h: Omit<Holiday, 'id'>) => {
+    const { data, error } = await supabase
+      .from('holidays')
+      .insert(h)
+      .select('id, date, name, category, description, image')
+      .single();
+    if (error) {
+      console.error('[Holidays] Could not add holiday:', error);
+      return;
+    }
+    setHolidays((prev) => [...prev, data as Holiday].sort((a, b) => a.date.localeCompare(b.date)));
   }, []);
 
-  const updateHoliday = useCallback((id: string, changes: Partial<Omit<Holiday, 'id'>>) => {
-    setHolidays((prev) =>
-      prev
-        .map((holiday) => (holiday.id === id ? { ...holiday, ...changes } : holiday))
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    );
+  const updateHoliday = useCallback(async (id: string, changes: Partial<Omit<Holiday, 'id'>>) => {
+    const { data, error } = await supabase
+      .from('holidays')
+      .update(changes)
+      .eq('id', id)
+      .select('id, date, name, category, description, image')
+      .single();
+    if (error) {
+      console.error('[Holidays] Could not update holiday:', error);
+      return;
+    }
+    setHolidays((prev) => prev.map((holiday) => (holiday.id === id ? data as Holiday : holiday)).sort((a, b) => a.date.localeCompare(b.date)));
   }, []);
 
-  const removeHoliday = useCallback((id: string) => {
-    setHolidays((prev) => prev.filter((h) => h.id !== id));
+  const removeHoliday = useCallback(async (id: string) => {
+    const { error } = await supabase.from('holidays').delete().eq('id', id);
+    if (error) {
+      console.error('[Holidays] Could not remove holiday:', error);
+      return;
+    }
+    setHolidays((prev) => prev.filter((holiday) => holiday.id !== id));
   }, []);
 
   return { holidays: [...holidays].sort((a, b) => a.date.localeCompare(b.date)), addHoliday, updateHoliday, removeHoliday };

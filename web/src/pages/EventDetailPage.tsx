@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { useEmployees } from '../data/employees';
-import { formatHolidayDate, resolveEventImage, type HolidayCategory } from '../data/holidays';
+import { formatHolidayDate, getComputedEmployeeEvents, resolveEventImage, useHolidays, type HolidayCategory } from '../data/holidays';
 
 type EventDetailData = {
     id: string;
@@ -35,77 +36,31 @@ export default function EventDetailPage() {
     const { id } = useParams();
     const { state } = useLocation() as { state?: { event?: EventDetailData } };
     const { employees } = useEmployees();
+    const { holidays } = useHolidays();
 
     const event = useMemo<EventDetailData | null>(() => {
         if (state?.event) return state.event;
 
-        try {
-            const stored = JSON.parse(localStorage.getItem('roster.holidays') || '[]') as Array<{
-                id: string;
-                name: string;
-                date: string;
-                category: HolidayCategory;
-                description?: string | null;
-                image?: string | null;
-            }>;
-
-            const manual = stored.find((item) => item.id === id);
-            if (manual) {
-                return {
-                    id: manual.id,
-                    name: manual.name,
-                    date: manual.date,
-                    category: manual.category,
-                    description: manual.description ?? null,
-                    image: manual.image ?? null,
-                    kind: manual.category === 'Announcement' ? 'Announcement' : 'Holiday',
-                };
-            }
-        } catch {
-            // Ignore invalid local storage payloads
+        const manual = holidays.find((item) => item.id === id);
+        if (manual) {
+            return {
+                id: manual.id,
+                name: manual.name,
+                date: manual.date,
+                category: manual.category,
+                description: manual.description ?? null,
+                image: manual.image ?? null,
+                kind: manual.category === 'Announcement' ? 'Announcement' : 'Holiday',
+            };
         }
 
-        const today = new Date();
-        const year = today.getFullYear();
         for (const employee of employees) {
-            if (employee.date_of_birth) {
-                const dob = new Date(`${employee.date_of_birth}T00:00:00`);
-                const birthdayDate = new Date(year, dob.getMonth(), dob.getDate());
-                const candidateId = `birthday-${employee.id}`;
-                if (candidateId === id) {
-                    return {
-                        id: candidateId,
-                        name: `${employee.name}'s birthday`,
-                        date: birthdayDate.toISOString().slice(0, 10),
-                        category: 'Birthday',
-                        description: 'Birthday celebration and team wishes.',
-                        image: null,
-                        kind: 'Birthday',
-                    };
-                }
-            }
-
-            const joined = new Date(`${employee.joining_date}T00:00:00`);
-            const years = year - joined.getFullYear();
-            if (years > 0) {
-                const anniversaryDate = new Date(year, joined.getMonth(), joined.getDate());
-                const candidateId = `anniversary-${employee.id}`;
-                if (candidateId === id) {
-                    return {
-                        id: candidateId,
-                        name: `${employee.name}'s ${years}-year work anniversary`,
-                        date: anniversaryDate.toISOString().slice(0, 10),
-                        category: 'Anniversary',
-                        description: 'Work anniversary milestone and appreciation message.',
-                        image: null,
-                        kind: 'Anniversary',
-                    };
-                }
-            }
+            const computed = getComputedEmployeeEvents(employee).find((item) => item.id === id);
+            if (computed) return computed;
         }
 
         return null;
-    }, [employees, id, state]);
+    }, [employees, holidays, id, state]);
 
     if (!event) {
         return (
@@ -173,9 +128,30 @@ export default function EventDetailPage() {
                             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                                 Event details
                             </p>
-                            <p className="mt-2 text-sm leading-6" style={{ color: 'var(--ink)' }}>
-                                {event.description || 'No additional notes were added for this event.'}
-                            </p>
+                            {event.description ? (
+                                <div className="mt-2 text-sm leading-6" style={{ color: 'var(--ink)' }}>
+                                    <ReactMarkdown
+                                        components={{
+                                            h1: ({ children }) => <h1 className="mb-3 text-xl font-semibold" style={{ color: 'var(--ink)' }}>{children}</h1>,
+                                            h2: ({ children }) => <h2 className="mb-2 text-lg font-semibold" style={{ color: 'var(--ink)' }}>{children}</h2>,
+                                            h3: ({ children }) => <h3 className="mb-2 text-base font-semibold" style={{ color: 'var(--accent-holiday)' }}>{children}</h3>,
+                                            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                                            strong: ({ children }) => <strong className="font-semibold" style={{ color: 'var(--ink)' }}>{children}</strong>,
+                                            em: ({ children }) => <em className="italic">{children}</em>,
+                                            ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+                                            ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+                                            a: ({ children, href }) => <a href={href} className="underline" style={{ color: 'var(--accent-holiday)' }} target="_blank" rel="noreferrer">{children}</a>,
+                                            code: ({ children }) => <code className="rounded px-1 py-0.5 font-mono text-xs" style={{ background: 'var(--line-soft)', color: 'var(--accent-holiday)' }}>{children}</code>,
+                                        }}
+                                    >
+                                        {event.description}
+                                    </ReactMarkdown>
+                                </div>
+                            ) : (
+                                <p className="mt-2 text-sm leading-6" style={{ color: 'var(--ink)' }}>
+                                    No additional notes were added for this event.
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -32,16 +32,16 @@ async function main() {
   const insertedDesignations = await db
     .insert(designations)
     .values([
-      { name: 'Software Engineer' },
-      { name: 'Senior Software Engineer' },
-      { name: 'Engineering Manager' },
-      { name: 'Sales Executive' },
-      { name: 'Sales Manager' },
-      { name: 'HR Executive' },
-      { name: 'HR Manager' },
-      { name: 'Finance Analyst' },
-      { name: 'Marketing Executive' },
-      { name: 'Product Designer' },
+      { name: 'Software Engineer', departmentId: dept['Engineering'] },
+      { name: 'Senior Software Engineer', departmentId: dept['Engineering'] },
+      { name: 'Engineering Manager', departmentId: dept['Engineering'] },
+      { name: 'Sales Executive', departmentId: dept['Sales'] },
+      { name: 'Sales Manager', departmentId: dept['Sales'] },
+      { name: 'HR Executive', departmentId: dept['Human Resources'] },
+      { name: 'HR Manager', departmentId: dept['Human Resources'] },
+      { name: 'Finance Analyst', departmentId: dept['Finance'] },
+      { name: 'Marketing Executive', departmentId: dept['Marketing'] },
+      { name: 'Product Designer', departmentId: dept['Design'] },
     ])
     .returning();
 

@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useEmployees, type Employee, type WorkMode } from '../data/employees';
 import { useDepartments } from '../data/departments';
 import { useDesignations } from '../data/designations';
 import { useEmployeeDocuments, type DocumentCategory } from '../data/employeeDocuments';
-import { useUsers } from '../data/users';
+import { createEmployeeAccount, useEmployeeAccounts } from '../lib/employeeAccounts';
 import { Drawer } from '../components/Drawer';
 import { StatusTag } from '../components/Ledger';
 import type { Role } from '../data/roles';
@@ -12,6 +12,7 @@ import type { Role } from '../data/roles';
 type Ctx = { role: Role };
 
 const WORK_MODES: WorkMode[] = ['OFFICE', 'WFH', 'HYBRID'];
+const EMPLOYEE_ROLE_OPTIONS: Exclude<Role, 'SUPER_ADMIN'>[] = ['EMPLOYEE', 'MANAGER', 'HR'];
 
 type FormState = {
   name: string;
@@ -22,6 +23,7 @@ type FormState = {
   manager_id: string;
   joining_date: string;
   work_mode: WorkMode;
+  role: Exclude<Role, 'SUPER_ADMIN'> | '';
   password: string;
   confirmPassword: string;
 };
@@ -35,6 +37,7 @@ const EMPTY_FORM: FormState = {
   manager_id: '',
   joining_date: '',
   work_mode: 'OFFICE',
+  role: '',
   password: '',
   confirmPassword: '',
 };
@@ -60,7 +63,7 @@ export default function EmployeesPage() {
   const canManage = role === 'SUPER_ADMIN' || role === 'HR';
 
   const { employees, addEmployee, updateEmployee, toggleStatus } = useEmployees();
-  const { addUser } = useUsers();
+  const { accounts, refresh: refreshAccounts } = useEmployeeAccounts();
   const { departments } = useDepartments();
   const { designations } = useDesignations();
 
@@ -77,6 +80,28 @@ export default function EmployeesPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [passwordError, setPasswordError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const { designations: departmentDesignations } = useDesignations(form.department_id || undefined);
+
+  const managerCandidates = useMemo(
+    () =>
+      employees.filter(
+        (employee) =>
+          employee.id !== editingId &&
+          employee.department_id === form.department_id &&
+          accounts.some(
+            (user) =>
+              user.role === 'MANAGER' && user.login_enabled && user.employee_id === employee.id,
+          ),
+      ),
+    [employees, editingId, form.department_id, accounts],
+  );
+
+  useEffect(() => {
+    if (!form.manager_id) return;
+    if (managerCandidates.some((manager) => manager.id === form.manager_id)) return;
+    setForm((current) => ({ ...current, manager_id: '' }));
+  }, [form.manager_id, managerCandidates]);
 
   const { documents, addDocument, removeDocument } = useEmployeeDocuments(editingId);
   const [docName, setDocName] = useState('');
@@ -106,6 +131,7 @@ export default function EmployeesPage() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setPasswordError('');
+    setSubmitError('');
     setDrawerOpen(true);
   }
 
@@ -120,16 +146,18 @@ export default function EmployeesPage() {
       manager_id: emp.manager_id ?? '',
       joining_date: emp.joining_date,
       work_mode: emp.work_mode,
+      role: '',
       password: '',
       confirmPassword: '',
     });
     setPasswordError('');
+    setSubmitError('');
     setDrawerOpen(true);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.department_id || !form.designation_id || !form.joining_date) {
+    if (!form.name.trim() || !form.email.trim() || !form.department_id || !form.designation_id || !form.joining_date || (!editingId && !form.role)) {
       return;
     }
     if (!editingId && form.password.length < 8) {
@@ -151,10 +179,28 @@ export default function EmployeesPage() {
       work_mode: form.work_mode,
     };
     if (editingId) {
-      updateEmployee(editingId, payload);
+      await updateEmployee(editingId, payload);
     } else {
-      const employeeId = addEmployee({ ...payload, employment_status: 'ACTIVE' });
-      addUser({ name: payload.name, email: payload.email, role: 'EMPLOYEE', employee_id: employeeId, password: form.password });
+      if (!form.role) return;
+      const employeeId = await addEmployee({ ...payload, employment_status: 'ACTIVE' });
+      if (employeeId) {
+        const { error: accountError } = await createEmployeeAccount({
+          employee_id: employeeId,
+          email: payload.email,
+          name: payload.name,
+          password: form.password,
+          role: form.role,
+        });
+        if (accountError) {
+          console.error('Could not create employee account:', accountError);
+          setSubmitError(`Employee was created, but login setup failed: ${accountError}`);
+          return;
+        }
+        await refreshAccounts();
+      } else {
+        setSubmitError('Could not create employee. Check the browser console for the Supabase error.');
+        return;
+      }
     }
     setPasswordError('');
     setDrawerOpen(false);
@@ -257,6 +303,11 @@ export default function EmployeesPage() {
                 <p className="font-mono truncate text-xs" style={{ color: 'var(--text-muted)' }}>
                   {emp.employee_code}
                 </p>
+                {!accounts.some((account) => account.employee_id === emp.id && account.login_enabled) && (
+                  <p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--status-absent)' }}>
+                    No login yet
+                  </p>
+                )}
               </div>
               <span className="truncate text-sm" style={{ color: 'var(--text-secondary)' }}>
                 {deptName(emp.department_id)}
@@ -301,6 +352,15 @@ export default function EmployeesPage() {
 
       <Drawer open={drawerOpen} title={editingId ? 'Edit employee' : 'Add employee'} onClose={() => setDrawerOpen(false)}>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {submitError && (
+            <div
+              role="alert"
+              className="border px-3 py-3 text-sm"
+              style={{ borderColor: 'var(--status-absent)', background: 'var(--status-absent-bg)', color: 'var(--status-absent)' }}
+            >
+              {submitError}
+            </div>
+          )}
           <Field label="Full name">
             <input
               type="text"
@@ -347,7 +407,7 @@ export default function EmployeesPage() {
               <select
                 required
                 value={form.department_id}
-                onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value, designation_id: '' }))}
                 className="w-full border px-3 py-2 text-sm outline-none"
                 style={inputStyle}
               >
@@ -361,6 +421,24 @@ export default function EmployeesPage() {
                 ))}
               </select>
             </Field>
+            {!editingId && <Field label="Role">
+              <select
+                required
+                value={form.role}
+                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Exclude<Role, 'SUPER_ADMIN'> }))}
+                className="w-full border px-3 py-2 text-sm outline-none"
+                style={inputStyle}
+              >
+                <option value="" disabled>
+                  Select…
+                </option>
+                {EMPLOYEE_ROLE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option === 'EMPLOYEE' ? 'Employee' : option === 'MANAGER' ? 'Manager' : 'HR'}
+                  </option>
+                ))}
+              </select>
+            </Field>}
             <Field label="Designation">
               <select
                 required
@@ -372,7 +450,7 @@ export default function EmployeesPage() {
                 <option value="" disabled>
                   Select…
                 </option>
-                {designations.map((d) => (
+                {departmentDesignations.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
@@ -388,13 +466,11 @@ export default function EmployeesPage() {
               style={inputStyle}
             >
               <option value="">None</option>
-              {employees
-                .filter((e) => e.id !== editingId)
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+              {managerCandidates.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-4">

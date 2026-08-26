@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useMemo } from 'react';
-import { formatHolidayDate, resolveEventImage, useHolidays, type HolidayCategory } from '../data/holidays';
+import { formatHolidayDate, resolveEventImage, stripMarkdown, useHolidays, type HolidayCategory } from '../data/holidays';
 import { useUpcomingEvents } from '../data/events';
 import type { Employee } from '../data/employees';
 
@@ -55,7 +55,7 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
   }, [holidays, upcomingEvents]);
 
   return (
-    <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
+    <div className="min-w-0 border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
       <div
         className="flex items-center justify-between border-b px-5 py-3.5"
         style={{ borderColor: 'var(--line-soft)' }}
@@ -84,7 +84,7 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
               <li
                 key={item.id}
                 onClick={() => navigate(`/events/${item.id}`, { state: { event: item } })}
-                className="flex cursor-pointer items-center gap-4 border-b px-5 py-3 last:border-b-0"
+                className="min-w-0 flex cursor-pointer items-center gap-4 border-b px-5 py-3 last:border-b-0"
                 style={{ borderColor: 'var(--line-soft)' }}
               >
                 <img
@@ -109,7 +109,7 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
                   </p>
                   {item.description && (
                     <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                      {item.description}
+                      {stripMarkdown(item.description)}
                     </p>
                   )}
                   <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>

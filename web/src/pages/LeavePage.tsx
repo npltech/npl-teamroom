@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { useCurrentEmployee } from '../data/currentUser';
 import { useEmployees } from '../data/employees';
 import { leaveDayCount, useLeaveRequests, type LeaveRequest, type LeaveType } from '../data/leave';
 import { Drawer } from '../components/Drawer';
 import { StatCard, StatusTag } from '../components/Ledger';
 import type { Role } from '../data/roles';
+import { useAuth } from '../contexts/AuthContext';
 
 type Ctx = { role: Role };
 
@@ -92,15 +92,19 @@ function RequestRow({
 
 export default function LeavePage() {
   const { role } = useOutletContext<Ctx>();
-  const employee = useCurrentEmployee(role);
+  const { profile } = useAuth();
   const { employees } = useEmployees();
   const { requests, requestLeave, approve, reject } = useLeaveRequests();
+  const employee = profile?.employee_id ? employees.find((item) => item.id === profile.employee_id) ?? null : null;
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [type, setType] = useState<LeaveType>('Casual');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
+  const [requestEmployeeId, setRequestEmployeeId] = useState('');
+  const [formError, setFormError] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const mine = useMemo(
     () => (employee ? requests.filter((r) => r.employee_id === employee.id) : []),
@@ -113,6 +117,16 @@ export default function LeavePage() {
 
   const canApproveTeam = role === 'MANAGER' && !!employee;
   const canApproveOrg = role === 'HR' || role === 'SUPER_ADMIN';
+  const canSubmitForOthers = canApproveTeam || canApproveOrg;
+  const directReports = useMemo(
+    () => (employee ? employees.filter((item) => item.manager_id === employee.id) : []),
+    [employee, employees],
+  );
+  const requestableEmployees = canApproveOrg
+    ? employees
+    : employee
+      ? [employee, ...directReports]
+      : [];
 
   const teamRequests = useMemo(() => {
     if (!canApproveTeam || !employee) return [];
@@ -124,15 +138,27 @@ export default function LeavePage() {
 
   const nameFor = (id: string) => employees.find((e) => e.id === id)?.name ?? 'Unknown';
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!employee || !startDate || !endDate || !reason.trim()) return;
-    requestLeave(employee.id, { type, start_date: startDate, end_date: endDate, reason: reason.trim() });
+    const targetEmployeeId = canApproveOrg ? requestEmployeeId : requestEmployeeId || employee?.id;
+    if (!targetEmployeeId || !startDate || !endDate || !reason.trim()) return;
+    const error = await requestLeave(targetEmployeeId, { type, start_date: startDate, end_date: endDate, reason: reason.trim() });
+    if (error) {
+      setFormError(error);
+      return;
+    }
     setType('Casual');
     setStartDate('');
     setEndDate('');
     setReason('');
+    setRequestEmployeeId(employee?.id ?? '');
+    setFormError('');
     setDrawerOpen(false);
+  }
+
+  async function handleDecision(decide: (id: string) => Promise<string | null>, id: string) {
+    const error = await decide(id);
+    setActionError(error ?? '');
   }
 
   return (
@@ -148,7 +174,11 @@ export default function LeavePage() {
         </div>
         {employee && (
           <button
-            onClick={() => setDrawerOpen(true)}
+            onClick={() => {
+              setRequestEmployeeId(canApproveOrg ? '' : employee?.id ?? '');
+              setFormError('');
+              setDrawerOpen(true);
+            }}
             className="px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
             style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}
           >
@@ -201,7 +231,7 @@ export default function LeavePage() {
             </p>
           ) : (
             teamRequests.map((r) => (
-              <RequestRow key={r.id} req={r} employeeName={nameFor(r.employee_id)} showApprove onApprove={approve} onReject={reject} />
+              <RequestRow key={r.id} req={r} employeeName={nameFor(r.employee_id)} showApprove onApprove={(id) => void handleDecision(approve, id)} onReject={(id) => void handleDecision(reject, id)} />
             ))
           )}
         </div>
@@ -220,7 +250,7 @@ export default function LeavePage() {
             </p>
           ) : (
             orgRequests.map((r) => (
-              <RequestRow key={r.id} req={r} employeeName={nameFor(r.employee_id)} showApprove onApprove={approve} onReject={reject} />
+              <RequestRow key={r.id} req={r} employeeName={nameFor(r.employee_id)} showApprove onApprove={(id) => void handleDecision(approve, id)} onReject={(id) => void handleDecision(reject, id)} />
             ))
           )}
         </div>
@@ -237,8 +267,27 @@ export default function LeavePage() {
         </div>
       )}
 
+      {actionError && <p className="mt-4 text-sm" style={{ color: 'var(--status-absent)' }}>{actionError}</p>}
+
       <Drawer open={drawerOpen} title="Request leave" onClose={() => setDrawerOpen(false)}>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {canSubmitForOthers && (
+            <Field label="Employee">
+              <select
+                required
+                value={canApproveOrg ? requestEmployeeId : requestEmployeeId || employee?.id || ''}
+                onChange={(e) => setRequestEmployeeId(e.target.value)}
+                className="w-full border px-3 py-2 text-sm outline-none"
+                style={inputStyle}
+              >
+                <option value="" disabled>Select employee</option>
+                {requestableEmployees.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {formError && <p className="text-sm" style={{ color: 'var(--status-absent)' }}>{formError}</p>}
           <Field label="Type">
             <select value={type} onChange={(e) => setType(e.target.value as LeaveType)} className="w-full border px-3 py-2 text-sm outline-none" style={inputStyle}>
               {LEAVE_TYPES.map((t) => (

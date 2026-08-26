@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { Employee } from './employees';
+import { getComputedEmployeeEvents } from './holidays';
 
 export interface CompanyEvent {
   id: string;
@@ -21,42 +22,30 @@ const SEED_EVENTS: Omit<CompanyEvent, 'id'>[] = [
   { date: daysAhead(9), title: 'Q3 planning kickoff', kind: 'announcement' },
 ];
 
-/** Work anniversaries computed from each employee's joining_date, projected onto this year. */
 function anniversariesFrom(employees: Employee[]): CompanyEvent[] {
-  const today = new Date();
-  const thisYear = today.getFullYear();
-  return employees
-    .map((e): CompanyEvent | null => {
-      const joined = new Date(e.joining_date + 'T00:00:00');
-      const years = thisYear - joined.getFullYear();
-      if (years <= 0) return null;
-      const anniversary = new Date(thisYear, joined.getMonth(), joined.getDate());
-      return {
-        id: `anniv-${e.id}`,
-        date: anniversary.toISOString().slice(0, 10),
-        title: `${e.name}'s ${years}-year work anniversary`,
-        kind: 'anniversary',
-      };
-    })
-    .filter((x): x is CompanyEvent => x !== null);
+  return employees.flatMap((employee) => getComputedEmployeeEvents(employee))
+    .filter((event) => event.kind === 'Anniversary')
+    .map((event) => ({
+      id: event.id,
+      date: event.date,
+      title: event.name,
+      kind: 'anniversary',
+      description: event.description,
+      image: event.image,
+    }));
 }
 
 function birthdaysFrom(employees: Employee[]): CompanyEvent[] {
-  const today = new Date();
-  const thisYear = today.getFullYear();
-  return employees
-    .map((e): CompanyEvent | null => {
-      if (!e.date_of_birth) return null;
-      const dob = new Date(e.date_of_birth + 'T00:00:00');
-      const birthday = new Date(thisYear, dob.getMonth(), dob.getDate());
-      return {
-        id: `birthday-${e.id}`,
-        date: birthday.toISOString().slice(0, 10),
-        title: `${e.name}'s birthday`,
-        kind: 'birthday',
-      };
-    })
-    .filter((x): x is CompanyEvent => x !== null);
+  return employees.flatMap((employee) => getComputedEmployeeEvents(employee))
+    .filter((event) => event.kind === 'Birthday')
+    .map((event) => ({
+      id: event.id,
+      date: event.date,
+      title: event.name,
+      kind: 'birthday',
+      description: event.description,
+      image: event.image,
+    }));
 }
 
 export function useUpcomingEvents(employees: Employee[], limit = 4): CompanyEvent[] {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type LeaveType = 'Casual' | 'Sick' | 'Annual' | 'Other';
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -7,45 +8,16 @@ export interface LeaveRequest {
   id: string;
   employee_id: string;
   type: LeaveType;
-  start_date: string; // YYYY-MM-DD
-  end_date: string; // YYYY-MM-DD
+  start_date: string;
+  end_date: string;
   reason: string;
   status: LeaveStatus;
-  requested_at: string; // YYYY-MM-DD
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
 }
 
-const STORAGE_KEY = 'roster.leave';
-
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-// Mirrors the names already used in the dashboard "Leave requests" / "Leave
-// approvals" ledger widgets, so the numbers agree across the app.
-const SEED_LEAVE: LeaveRequest[] = [
-  { id: 'l1', employee_id: 'e12', type: 'Sick', start_date: daysAgo(-2), end_date: daysAgo(-1), reason: 'Fever, resting at home', status: 'PENDING', requested_at: daysAgo(1) },
-  { id: 'l2', employee_id: 'e6', type: 'Annual', start_date: daysAgo(-10), end_date: daysAgo(-6), reason: 'Family trip', status: 'APPROVED', requested_at: daysAgo(6) },
-  { id: 'l3', employee_id: 'e9', type: 'Casual', start_date: daysAgo(-4), end_date: daysAgo(-4), reason: 'Personal errand', status: 'REJECTED', requested_at: daysAgo(5) },
-  { id: 'l4', employee_id: 'e7', type: 'Annual', start_date: daysAgo(-14), end_date: daysAgo(-12), reason: 'Sister\u2019s wedding', status: 'PENDING', requested_at: daysAgo(2) },
-  { id: 'l5', employee_id: 'e4', type: 'Sick', start_date: daysAgo(-1), end_date: daysAgo(-1), reason: 'Doctor\u2019s appointment', status: 'PENDING', requested_at: daysAgo(0) },
-  { id: 'l6', employee_id: 'e4', type: 'Casual', start_date: daysAgo(0), end_date: daysAgo(0), reason: 'Personal day', status: 'APPROVED', requested_at: daysAgo(1) },
-];
-
-function load(): LeaveRequest[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_LEAVE));
-      return SEED_LEAVE;
-    }
-    const stored = JSON.parse(raw) as LeaveRequest[];
-    return stored.some((request) => request.id === 'l6') ? stored : [...stored, SEED_LEAVE[SEED_LEAVE.length - 1]];
-  } catch {
-    return SEED_LEAVE;
-  }
-}
+const SELECT_COLUMNS = 'id, employee_id, type, start_date, end_date, reason, status, requested_at, decided_by, decided_at';
 
 /** Inclusive day count between start and end. */
 export function leaveDayCount(r: Pick<LeaveRequest, 'start_date' | 'end_date'>): number {
@@ -55,30 +27,61 @@ export function leaveDayCount(r: Pick<LeaveRequest, 'start_date' | 'end_date'>):
 }
 
 export function useLeaveRequests() {
-  const [requests, setRequests] = useState<LeaveRequest[]>(() => load());
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select(SELECT_COLUMNS)
+      .order('requested_at', { ascending: false });
+    if (error) {
+      console.error('[Leave] Could not load requests:', error);
+      return;
+    }
+    setRequests((data ?? []) as LeaveRequest[]);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
-  }, [requests]);
+    void refresh();
+  }, [refresh]);
 
   const requestLeave = useCallback(
-    (employeeId: string, payload: { type: LeaveType; start_date: string; end_date: string; reason: string }) => {
-      setRequests((prev) => [
-        {
-          id: crypto.randomUUID(),
-          employee_id: employeeId,
-          status: 'PENDING',
-          requested_at: new Date().toISOString().slice(0, 10),
-          ...payload,
-        },
-        ...prev,
-      ]);
+    async (employeeId: string, payload: { type: LeaveType; start_date: string; end_date: string; reason: string }) => {
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .insert({ employee_id: employeeId, ...payload })
+        .select(SELECT_COLUMNS)
+        .single();
+      if (error) {
+        console.error('[Leave] Could not submit request:', error);
+        return error.message;
+      }
+      setRequests((prev) => [data as LeaveRequest, ...prev]);
+      return null;
     },
     [],
   );
 
-  const decide = useCallback((id: string, status: 'APPROVED' | 'REJECTED') => {
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+  const decide = useCallback(async (id: string, status: 'APPROVED' | 'REJECTED') => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      const message = userError?.message ?? 'You must be signed in to decide a leave request.';
+      console.error('[Leave] Could not identify decision maker:', userError);
+      return message;
+    }
+
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .update({ status, decided_by: userData.user.id, decided_at: new Date().toISOString() })
+      .eq('id', id)
+      .select(SELECT_COLUMNS)
+      .single();
+    if (error) {
+      console.error('[Leave] Could not decide request:', error);
+      return error.message;
+    }
+    setRequests((prev) => prev.map((request) => (request.id === id ? data as LeaveRequest : request)));
+    return null;
   }, []);
 
   const approve = useCallback((id: string) => decide(id, 'APPROVED'), [decide]);

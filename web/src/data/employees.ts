@@ -1,87 +1,108 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type WorkMode = 'OFFICE' | 'WFH' | 'HYBRID';
 export type EmploymentStatus = 'ACTIVE' | 'INACTIVE';
 export type Gender = 'Male' | 'Female' | 'Other' | 'Prefer not to say';
 
 export interface Employee {
-  id: string;
-  employee_code: string;
-  name: string;
-  email: string;
-  phone: string;
-  department_id: string;
-  designation_id: string;
-  manager_id: string | null;
-  joining_date: string; // YYYY-MM-DD
-  date_of_birth?: string; // YYYY-MM-DD
-  gender?: Gender;
-  employment_status: EmploymentStatus;
-  work_mode: WorkMode;
+    id: string;
+    employee_code: string;
+    name: string;
+    email: string;
+    phone: string;
+    department_id: string;
+    designation_id: string;
+    manager_id: string | null;
+    joining_date: string;
+    date_of_birth?: string;
+    birthday_message?: string | null;
+    anniversary_message?: string | null;
+    gender?: Gender;
+    employment_status: EmploymentStatus;
+    work_mode: WorkMode;
 }
 
-const STORAGE_KEY = 'roster.employees';
-
-// Names reused from the dashboard ledger widgets so the app feels like one
-// coherent dataset rather than disconnected demo content on every screen.
-const SEED_EMPLOYEES: Employee[] = [
-  { id: 'e1', employee_code: 'EMP-1001', name: 'Kabir Shah', email: 'kabir.shah@roster.io', phone: '+91 98200 11221', department_id: 'd2', designation_id: 'g5', manager_id: null, joining_date: '2021-03-01', date_of_birth: '1993-03-12', employment_status: 'ACTIVE', work_mode: 'OFFICE' },
-  { id: 'e2', employee_code: 'EMP-1002', name: 'Meera Nair', email: 'meera.nair@roster.io', phone: '+91 98200 11222', department_id: 'd3', designation_id: 'g8', manager_id: null, joining_date: '2020-07-14', date_of_birth: '1995-07-22', employment_status: 'ACTIVE', work_mode: 'HYBRID' },
-  { id: 'e3', employee_code: 'EMP-1003', name: 'Arjun Sinha', email: 'arjun.sinha@roster.io', phone: '+91 98200 11223', department_id: 'd1', designation_id: 'g1', manager_id: 'e6', joining_date: '2023-01-09', date_of_birth: '1998-01-30', employment_status: 'ACTIVE', work_mode: 'WFH' },
-  { id: 'e4', employee_code: 'EMP-1004', name: 'Devika Shetty', email: 'devika.shetty@roster.io', phone: '+91 98200 11224', department_id: 'd1', designation_id: 'g1', manager_id: 'e6', joining_date: '2022-11-20', date_of_birth: '1996-11-02', employment_status: 'ACTIVE', work_mode: 'OFFICE' },
-  { id: 'e5', employee_code: 'EMP-1005', name: 'Imran Qureshi', email: 'imran.qureshi@roster.io', phone: '+91 98200 11225', department_id: 'd1', designation_id: 'g2', manager_id: 'e6', joining_date: '2021-09-05', date_of_birth: '1991-09-16', employment_status: 'ACTIVE', work_mode: 'WFH' },
-  { id: 'e6', employee_code: 'EMP-1006', name: 'Vikram Joshi', email: 'vikram.joshi@roster.io', phone: '+91 98200 11226', department_id: 'd1', designation_id: 'g3', manager_id: null, joining_date: '2019-05-18', date_of_birth: '1989-05-05', employment_status: 'ACTIVE', work_mode: 'HYBRID' },
-  { id: 'e7', employee_code: 'EMP-1007', name: 'Neha Bhatt', email: 'neha.bhatt@roster.io', phone: '+91 98200 11227', department_id: 'd1', designation_id: 'g1', manager_id: 'e6', joining_date: '2023-06-12', date_of_birth: '1994-06-14', employment_status: 'ACTIVE', work_mode: 'OFFICE' },
-  { id: 'e8', employee_code: 'EMP-1008', name: 'Sameer Ali', email: 'sameer.ali@roster.io', phone: '+91 98200 11228', department_id: 'd1', designation_id: 'g1', manager_id: 'e6', joining_date: '2024-02-01', date_of_birth: '1992-02-18', employment_status: 'INACTIVE', work_mode: 'OFFICE' },
-  { id: 'e9', employee_code: 'EMP-1009', name: 'Priya Das', email: 'priya.das@roster.io', phone: '+91 98200 11229', department_id: 'd6', designation_id: 'g10', manager_id: null, joining_date: '2024-07-22', date_of_birth: '1997-07-29', employment_status: 'ACTIVE', work_mode: 'HYBRID' },
-  { id: 'e10', employee_code: 'EMP-1010', name: 'Rohan Verma', email: 'rohan.verma@roster.io', phone: '+91 98200 11230', department_id: 'd1', designation_id: 'g1', manager_id: 'e6', joining_date: '2024-08-01', date_of_birth: '1998-08-17', employment_status: 'ACTIVE', work_mode: 'OFFICE' },
-  { id: 'e11', employee_code: 'EMP-1011', name: 'Sana Iqbal', email: 'sana.iqbal@roster.io', phone: '+91 98200 11231', department_id: 'd4', designation_id: 'g9', manager_id: null, joining_date: '2024-05-15', date_of_birth: '1995-05-23', employment_status: 'ACTIVE', work_mode: 'WFH' },
-  { id: 'e12', employee_code: 'EMP-1012', name: 'Anita Rao', email: 'anita.rao@roster.io', phone: '+91 98200 11232', department_id: 'd5', designation_id: 'g6', manager_id: null, joining_date: '2022-01-10', date_of_birth: '1990-01-05', employment_status: 'ACTIVE', work_mode: 'OFFICE' },
-];
-
-function load(): Employee[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_EMPLOYEES));
-      return SEED_EMPLOYEES;
-    }
-    return JSON.parse(raw) as Employee[];
-  } catch {
-    return SEED_EMPLOYEES;
-  }
-}
+const SELECT_COLUMNS =
+    'id, employee_code, name, email, phone, department_id, designation_id, manager_id, joining_date, date_of_birth, birthday_message, anniversary_message, gender, employment_status, work_mode';
 
 function nextEmployeeCode(existing: Employee[]): string {
-  const nums = existing.map((e) => parseInt(e.employee_code.replace('EMP-', ''), 10)).filter((n) => !isNaN(n));
-  const next = (nums.length ? Math.max(...nums) : 1000) + 1;
-  return `EMP-${next}`;
+    const nums = existing.map((e) => parseInt(e.employee_code.replace('EMP-', ''), 10)).filter((n) => !isNaN(n));
+    const next = (nums.length ? Math.max(...nums) : 1000) + 1;
+    return `EMP-${next}`;
 }
 
 export function useEmployees() {
-  const [employees, setEmployees] = useState<Employee[]>(() => load());
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(employees));
-  }, [employees]);
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        const { data, error: fetchError } = await supabase
+            .from('employees')
+            .select(SELECT_COLUMNS)
+            .order('employee_code', { ascending: true });
+        if (fetchError) {
+            setError(fetchError.message);
+        } else {
+            setError(null);
+            setEmployees((data ?? []) as Employee[]);
+        }
+        setLoading(false);
+    }, []);
 
-  const addEmployee = useCallback((e: Omit<Employee, 'id' | 'employee_code'>) => {
-    const id = crypto.randomUUID();
-    setEmployees((prev) => [...prev, { ...e, id, employee_code: nextEmployeeCode(prev) }]);
-    return id;
-  }, []);
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
 
-  const updateEmployee = useCallback((id: string, patch: Partial<Omit<Employee, 'id' | 'employee_code'>>) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
-  }, []);
-
-  const toggleStatus = useCallback((id: string) => {
-    setEmployees((prev) =>
-      prev.map((e) =>
-        e.id === id ? { ...e, employment_status: e.employment_status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' } : e,
-      ),
+    const addEmployee = useCallback(
+        async (e: Omit<Employee, 'id' | 'employee_code'>) => {
+            const employee_code = nextEmployeeCode(employees);
+            const { data, error: insertError } = await supabase
+                .from('employees')
+                .insert({ ...e, employee_code })
+                .select(SELECT_COLUMNS)
+                .single();
+            if (insertError) {
+                setError(insertError.message);
+                console.error('[Employees] Could not create employee row:', insertError);
+                return null;
+            }
+            setEmployees((prev) => [...prev, data as Employee]);
+            return (data as Employee).id;
+        },
+        [employees],
     );
-  }, []);
 
-  return { employees, addEmployee, updateEmployee, toggleStatus };
+    const updateEmployee = useCallback(
+        async (id: string, patch: Partial<Omit<Employee, 'id' | 'employee_code'>>) => {
+            const { data, error: updateError } = await supabase
+                .from('employees')
+                .update(patch)
+                .eq('id', id)
+                .select(SELECT_COLUMNS)
+                .single();
+            if (updateError) {
+                setError(updateError.message);
+                console.error('[Employees] Could not update employee:', updateError);
+                return updateError.message;
+            }
+            setEmployees((prev) => prev.map((e) => (e.id === id ? (data as Employee) : e)));
+            return null;
+        },
+        [],
+    );
+
+    const toggleStatus = useCallback(
+        async (id: string) => {
+            const current = employees.find((e) => e.id === id);
+            if (!current) return;
+            const nextStatus: EmploymentStatus = current.employment_status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+            await updateEmployee(id, { employment_status: nextStatus });
+        },
+        [employees, updateEmployee],
+    );
+
+    return { employees, loading, error, addEmployee, updateEmployee, toggleStatus, refresh };
 }

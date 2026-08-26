@@ -47,6 +47,7 @@ export default function AppShell() {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   const override = profileOverrides[role] ?? {};
+
   const profileEmployee = employee;
   const profileNameDisplay = override.name ?? profileEmployee?.name ?? profile?.name ?? ROLE_LABEL[role];
   const profileEmail = profileEmployee?.email ?? profile?.email ?? '—';
@@ -116,7 +117,7 @@ export default function AppShell() {
     window.setTimeout(() => setPasswordSuccess(false), 3000);
   }
 
-  function saveProfile(event: React.FormEvent) {
+  async function saveProfile(event: React.FormEvent) {
     event.preventDefault();
     const today = new Date().toISOString().slice(0, 10);
     if (!profileName.trim()) {
@@ -129,12 +130,17 @@ export default function AppShell() {
     }
 
     const nextOverride = { name: profileName.trim(), date_of_birth: profileDob, ...(profileGender ? { gender: profileGender } : {}) };
+    if (profileEmployee) {
+      const updateError = await updateEmployee(profileEmployee.id, { name: nextOverride.name, date_of_birth: profileDob || undefined, gender: profileGender || undefined });
+      if (updateError) {
+        setProfileError(`Could not update profile: ${updateError}`);
+        setProfileSuccess(false);
+        return;
+      }
+    }
     const nextOverrides = { ...profileOverrides, [role]: nextOverride };
     setProfileOverrides(nextOverrides);
     localStorage.setItem(PROFILE_OVERRIDES_KEY, JSON.stringify(nextOverrides));
-    if (profileEmployee) {
-      updateEmployee(profileEmployee.id, { name: nextOverride.name, date_of_birth: profileDob || undefined, gender: profileGender || undefined });
-    }
     setProfileSuccess(true);
     setProfileError('');
     window.setTimeout(() => setProfileSuccess(false), 3000);
@@ -142,7 +148,7 @@ export default function AppShell() {
 
   // ProtectedRoute already guarantees a session exists before this mounts;
   // nothing to redirect here.
-  useEffect(() => {}, []);
+  useEffect(() => { }, []);
 
   async function signOut() {
     await authSignOut();

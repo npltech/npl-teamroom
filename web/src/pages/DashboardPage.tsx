@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { ROLE_LABEL, type Role } from '../data/roles';
 import { StatCard, LedgerPanel, LedgerRow } from '../components/Ledger';
@@ -6,20 +7,47 @@ import { AttendanceDonut } from '../components/AttendanceDonut';
 import { UpcomingHolidays } from '../components/UpcomingHolidays';
 import { QuickLinks } from '../components/QuickLinks';
 import { useEmployees } from '../data/employees';
+import { useDepartments } from '../data/departments';
+import { countHolidaysThisYear, useHolidays } from '../data/holidays';
+import { supabase } from '../lib/supabase';
 import { useCurrentEmployee } from '../data/currentUser';
 import { useTasks } from '../data/tasks';
 
 type Ctx = { role: Role };
 
+function useProfileCounts() {
+  const [counts, setCounts] = useState({ users: 0, activeUsers: 0 });
+
+  useEffect(() => {
+    async function loadCounts() {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const [usersResult, activeUsersResult] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('last_active_at', since),
+      ]);
+      if (usersResult.error) console.error('[Dashboard] Could not count users:', usersResult.error);
+      if (activeUsersResult.error) console.error('[Dashboard] Could not count active users:', activeUsersResult.error);
+      setCounts({ users: usersResult.count ?? 0, activeUsers: activeUsersResult.count ?? 0 });
+    }
+    void loadCounts();
+  }, []);
+
+  return counts;
+}
+
 function SuperAdminDashboard() {
   const { employees } = useEmployees();
+  const { departments } = useDepartments();
+  const { holidays } = useHolidays();
+  const { users, activeUsers } = useProfileCounts();
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Users" value={142} status="structure" />
-        <StatCard label="Employees" value={118} status="present" />
-        <StatCard label="Departments" value={9} status="structure" />
-        <StatCard label="Active users (24h)" value={87} status="present" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <StatCard label="Users" value={users} status="structure" />
+        <StatCard label="Employees" value={employees.length} status="present" />
+        <StatCard label="Departments" value={departments.length} status="structure" />
+        <StatCard label="Active users (24h)" value={activeUsers} status="present" />
+        <StatCard label="Holidays this year" value={countHolidaysThisYear(holidays)} status="pending" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
@@ -44,13 +72,15 @@ function SuperAdminDashboard() {
 function HRDashboard() {
   const navigate = useNavigate();
   const { employees } = useEmployees();
+  const { holidays } = useHolidays();
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Employees" value={118} status="present" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <StatCard label="Employees" value={employees.length} status="present" />
         <StatCard label="Open jobs" value={6} status="structure" />
         <StatCard label="Candidates" value={34} status="pending" />
         <StatCard label="New joiners (mtd)" value={5} status="present" />
+        <StatCard label="Holidays this year" value={countHolidaysThisYear(holidays)} status="pending" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">

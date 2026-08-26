@@ -17,3 +17,8 @@ supabase/
 ├── seed.sql          -- demo/reference data
 └── config.toml        -- Supabase CLI config
 ```
+
+Employee account creation uses the Edge Function at
+`supabase/functions/create-employee-account`. Deploy it with the Supabase CLI
+and set its `SUPABASE_SERVICE_ROLE_KEY` secret. Never expose that secret in
+the web application's environment variables.

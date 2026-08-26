@@ -9,6 +9,8 @@ export interface Profile {
   email: string;
   role: Role;
   employee_id: string | null;
+  login_enabled: boolean;
+  last_active_at: string | null;
 }
 
 interface AuthContextValue {
@@ -24,12 +26,20 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, email, role, employee_id')
+    .select('id, name, email, role, employee_id, login_enabled, last_active_at')
     .eq('id', userId)
     .single();
 
   if (error || !data) return null;
   return data as Profile;
+}
+
+async function recordActivity(userId: string) {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ last_active_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) console.error('[Auth] Could not record user activity:', error);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -47,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session) {
         const p = await fetchProfile(data.session.user.id);
         if (!cancelled) setProfile(p);
+        await recordActivity(data.session.user.id);
         console.log('Logged in as:', p?.email, '— role:', p?.role);
       }
       if (!cancelled) setLoading(false);
@@ -56,9 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       setSession(newSession);
-      if (newSession) {
+      if (newSession) {                                                                                
         const p = await fetchProfile(newSession.user.id);
         setProfile(p);
+        await recordActivity(newSession.user.id);
       } else {
         setProfile(null);
       }

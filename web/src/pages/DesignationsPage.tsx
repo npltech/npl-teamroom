@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useDesignations } from '../data/designations';
+import { useDepartments } from '../data/departments';
 import { useEmployees } from '../data/employees';
 import type { Role } from '../data/roles';
 
@@ -12,16 +13,19 @@ export default function DesignationsPage() {
   const { role } = useOutletContext<Ctx>();
   const canManage = role === 'SUPER_ADMIN';
   const { designations, addDesignation, removeDesignation } = useDesignations();
+  const { departments } = useDepartments();
   const { employees } = useEmployees();
   const [name, setName] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
 
   const countFor = (id: string) => employees.filter((e) => e.designation_id === id).length;
 
-  function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-    addDesignation(name.trim());
+    if (!name.trim() || !departmentId) return;
+    await addDesignation(name.trim(), departmentId);
     setName('');
+    setDepartmentId('');
   }
 
   return (
@@ -53,6 +57,9 @@ export default function DesignationsPage() {
                 <p className="flex-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>
                   {d.name}
                 </p>
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {departments.find((department) => department.id === d.department_id)?.name ?? '—'}
+                </span>
                 <span
                   className="font-mono px-2 py-0.5 text-[11px] uppercase"
                   style={{ background: 'var(--accent-structure-bg)', color: 'var(--accent-structure)', borderRadius: 'var(--radius-sm)' }}
@@ -92,6 +99,27 @@ export default function DesignationsPage() {
                   className="mt-1.5 w-full border px-3 py-2 text-sm outline-none"
                   style={inputStyle}
                 />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+                  Department
+                </span>
+                <select
+                  required
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  className="mt-1.5 w-full border px-3 py-2 text-sm outline-none"
+                  style={inputStyle}
+                >
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <button
                 type="submit"
