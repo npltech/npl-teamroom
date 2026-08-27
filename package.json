@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "build": "cd web && npm install && npm run build"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
     "react": "^19.2.8",
