@@ -1,159 +1,188 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'COMPLETED';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  assigned_to: string; // employee_id
-  assigned_by: string; // employee_id
-  client_id: string;
-  project_id: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  estimated_hours: number;
-  worked_hours: number;
-  due_date: string; // YYYY-MM-DD
-  created_at: string; // YYYY-MM-DD
+    id: string;
+    title: string;
+    description: string;
+    assigned_to: string;
+    assigned_by: string;
+    client_id: string;
+    client_name?: string;
+    project_id: string;
+    project_name?: string;
+    status: TaskStatus;
+    priority: TaskPriority;
+    estimated_hours: number;
+    worked_hours: number;
+    due_date: string;
+    created_at: string;
 }
 
 export interface TaskTimeEntry {
-  id: string;
-  task_id: string;
-  date: string;
-  hours: number;
-  logged_by: string;
+    id: string;
+    task_id: string;
+    date: string;
+    hours: number;
+    logged_by: string;
 }
 
 export interface TaskComment {
-  id: string;
-  task_id: string;
-  commenter: string;
-  timestamp: string;
-  text: string;
+    id: string;
+    task_id: string;
+    commenter: string;
+    timestamp: string;
+    text: string;
 }
 
-const STORAGE_KEY = 'roster.tasks';
-const TIME_LOG_STORAGE_KEY = 'roster.task-time-logs';
-const COMMENT_STORAGE_KEY = 'roster.task-comments';
+type Relation<T> = T | T[] | null;
+type TaskRow = {
+    id: string;
+    title: string;
+    description: string | null;
+    project_id: string;
+    status: 'To Do' | 'In Progress' | 'Completed';
+    priority: 'Low' | 'Medium' | 'High';
+    assigned_to: string | null;
+    assigned_by: string | null;
+    estimated_hours: number | null;
+    logged_hours: number | null;
+    due_date: string | null;
+    created_at: string;
+    projects?: Relation<{ name: string; client_id: string; clients?: Relation<{ name: string }> }>;
+};
 
-function daysFromNow(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+type TimeLogRow = { id: string; task_id: string; logged_by: string | null; hours: number; logged_at: string; employees?: Relation<{ name: string }> };
+type CommentRow = { id: string; task_id: string; author_id: string | null; body: string; created_at: string; employees?: Relation<{ name: string }> };
+
+function first<T>(relation: Relation<T> | undefined): T | undefined {
+    return Array.isArray(relation) ? relation[0] : relation ?? undefined;
 }
 
-// Mirrors the "My tasks" rows already shown on the employee dashboard, now
-// backed by real data instead of static text.
-const SEED_TASKS: Task[] = [
-  { id: 'tk1', title: 'Homepage hero refresh', description: 'Update hero sections and CTA flow for the client homepage.', assigned_to: 'e4', assigned_by: 'e6', client_id: 'c1', project_id: 'p1', status: 'IN_PROGRESS', priority: 'HIGH', estimated_hours: 6, worked_hours: 2.5, due_date: daysFromNow(2), created_at: daysFromNow(-5) },
-  { id: 'tk2', title: 'Create lead capture form', description: 'Complete the form validation and CRM integration.', assigned_to: 'e7', assigned_by: 'e6', client_id: 'c1', project_id: 'p1', status: 'TODO', priority: 'MEDIUM', estimated_hours: 4, worked_hours: 0, due_date: daysFromNow(4), created_at: daysFromNow(-3) },
-  { id: 'tk3', title: 'Portal analytics dashboard', description: 'Finish KPI widgets and team report layout.', assigned_to: 'e3', assigned_by: 'e12', client_id: 'c1', project_id: 'p2', status: 'IN_PROGRESS', priority: 'HIGH', estimated_hours: 5, worked_hours: 2, due_date: daysFromNow(1), created_at: daysFromNow(-7) },
-  { id: 'tk4', title: 'Review marketing report exports', description: 'Validate exports and reconcile campaign numbers.', assigned_to: 'e1', assigned_by: 'e6', client_id: 'c1', project_id: 'p3', status: 'TODO', priority: 'MEDIUM', estimated_hours: 3, worked_hours: 0, due_date: daysFromNow(6), created_at: daysFromNow(-2) },
-  { id: 'tk5', title: 'Fix login redirect bug', description: 'Redirect loop on expired session tokens.', assigned_to: 'e4', assigned_by: 'e6', client_id: 'c1', project_id: 'p2', status: 'COMPLETED', priority: 'HIGH', estimated_hours: 4, worked_hours: 4, due_date: daysFromNow(-1), created_at: daysFromNow(-4) },
-  { id: 'tk6', title: 'Prepare onboarding checklist template', description: 'Standard checklist for new joiners across departments.', assigned_to: 'e12', assigned_by: 'e12', client_id: 'c1', project_id: 'p2', status: 'TODO', priority: 'LOW', estimated_hours: 3, worked_hours: 0, due_date: daysFromNow(4), created_at: daysFromNow(-1) },
-];
-
-function load(): Task[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_TASKS));
-      return SEED_TASKS;
-    }
-    return JSON.parse(raw) as Task[];
-  } catch {
-    return SEED_TASKS;
-  }
+function fromTaskRow(row: TaskRow): Task {
+    const project = first(row.projects);
+    return {
+        id: row.id,
+        title: row.title,
+        description: row.description ?? '',
+        assigned_to: row.assigned_to ?? '',
+        assigned_by: row.assigned_by ?? '',
+        client_id: project?.client_id ?? '',
+        client_name: first(project?.clients)?.name,
+        project_id: row.project_id,
+        project_name: project?.name,
+        status: row.status === 'To Do' ? 'TODO' : row.status === 'In Progress' ? 'IN_PROGRESS' : 'COMPLETED',
+        priority: row.priority === 'Low' ? 'LOW' : row.priority === 'Medium' ? 'MEDIUM' : 'HIGH',
+        estimated_hours: Number(row.estimated_hours ?? 0),
+        worked_hours: Number(row.logged_hours ?? 0),
+        due_date: row.due_date ?? '',
+        created_at: row.created_at,
+    };
 }
 
-function loadList<T>(key: string): T[] {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
-  } catch {
-    return [];
-  }
+async function currentEmployeeId(): Promise<string | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data } = await supabase.from('profiles').select('employee_id').eq('id', user.id).single();
+    return data?.employee_id ?? null;
 }
+
+const TASK_SELECT = 'id, title, description, project_id, status, priority, assigned_to, assigned_by, estimated_hours, logged_hours, due_date, created_at, projects(name, client_id, clients(name))';
+const LOG_SELECT = 'id, task_id, logged_by, hours, logged_at, employees(name)';
+const COMMENT_SELECT = 'id, task_id, author_id, body, created_at, employees(name)';
 
 export function useTasks() {
-  const [tasks, setTasks] = useState<Task[]>(() => load());
-  const [timeEntries, setTimeEntries] = useState<TaskTimeEntry[]>(() => loadList<TaskTimeEntry>(TIME_LOG_STORAGE_KEY));
-  const [comments, setComments] = useState<TaskComment[]>(() => loadList<TaskComment>(COMMENT_STORAGE_KEY));
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [timeEntries, setTimeEntries] = useState<TaskTimeEntry[]>([]);
+    const [comments, setComments] = useState<TaskComment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  }, [tasks]);
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        const [taskResult, logResult, commentResult] = await Promise.all([
+            supabase.from('tasks').select(TASK_SELECT).order('created_at', { ascending: false }),
+            supabase.from('task_time_logs').select(LOG_SELECT).order('logged_at', { ascending: true }),
+            supabase.from('task_comments').select(COMMENT_SELECT).order('created_at', { ascending: true }),
+        ]);
+        const firstError = taskResult.error ?? logResult.error ?? commentResult.error;
+        if (firstError) {
+            setError(firstError.message);
+        } else {
+            setError(null);
+            setTasks((taskResult.data ?? []).map((row) => fromTaskRow(row as TaskRow)));
+            setTimeEntries((logResult.data ?? []).map((row) => {
+                const item = row as TimeLogRow;
+                return { id: item.id, task_id: item.task_id, date: item.logged_at, hours: Number(item.hours), logged_by: first(item.employees)?.name ?? item.logged_by ?? 'Unknown' };
+            }));
+            setComments((commentResult.data ?? []).map((row) => {
+                const item = row as CommentRow;
+                return { id: item.id, task_id: item.task_id, commenter: first(item.employees)?.name ?? item.author_id ?? 'Unknown', timestamp: item.created_at, text: item.body };
+            }));
+        }
+        setLoading(false);
+    }, []);
 
-  useEffect(() => {
-    localStorage.setItem(TIME_LOG_STORAGE_KEY, JSON.stringify(timeEntries));
-  }, [timeEntries]);
+    useEffect(() => { void refresh(); }, [refresh]);
 
-  useEffect(() => {
-    localStorage.setItem(COMMENT_STORAGE_KEY, JSON.stringify(comments));
-  }, [comments]);
-
-  const addTask = useCallback(
-    (payload: {
-      title: string;
-      description: string;
-      assigned_to: string;
-      assigned_by: string;
-      client_id: string;
-      project_id: string;
-      priority: TaskPriority;
-      estimated_hours: number;
-      due_date: string;
+    const addTask = useCallback(async (payload: {
+        title: string;
+        description: string;
+        assigned_to: string;
+        assigned_by: string;
+        client_id: string;
+        project_id: string;
+        priority: TaskPriority;
+        estimated_hours: number;
+        due_date: string;
     }) => {
-      setTasks((prev) => [
-        {
-          id: crypto.randomUUID(),
-          status: 'TODO',
-          worked_hours: 0,
-          created_at: new Date().toISOString().slice(0, 10),
-          ...payload,
-        },
-        ...prev,
-      ]);
-    },
-    [],
-  );
+        const { client_id: _clientId, ...taskPayload } = payload;
+        const { error: insertError } = await supabase.from('tasks').insert({
+            ...taskPayload,
+            status: 'To Do',
+            priority: payload.priority === 'LOW' ? 'Low' : payload.priority === 'MEDIUM' ? 'Medium' : 'High',
+        });
+        if (insertError) setError(insertError.message);
+        else await refresh();
+    }, [refresh]);
 
-  const setStatus = useCallback((id: string, status: TaskStatus) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
-  }, []);
+    const setStatus = useCallback(async (id: string, status: TaskStatus) => {
+        const value = status === 'TODO' ? 'To Do' : status === 'IN_PROGRESS' ? 'In Progress' : 'Completed';
+        const { error: updateError } = await supabase.from('tasks').update({ status: value }).eq('id', id);
+        if (updateError) setError(updateError.message);
+        else setTasks((prev) => prev.map((task) => task.id === id ? { ...task, status } : task));
+    }, []);
 
-  const logHours = useCallback((id: string, hours: number) => {
-    if (hours <= 0) return;
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, worked_hours: Math.round((t.worked_hours + hours) * 10) / 10 } : t)),
-    );
-  }, []);
+    const logTime = useCallback(async (taskId: string, hours: number, _loggedBy: string) => {
+        if (hours <= 0) return;
+        const employeeId = await currentEmployeeId();
+        if (!employeeId) {
+            setError('Could not determine the current employee.');
+            return;
+        }
+        const { error: insertError } = await supabase.from('task_time_logs').insert({ task_id: taskId, logged_by: employeeId, hours });
+        if (insertError) setError(insertError.message);
+        else await refresh();
+    }, [refresh]);
 
-  const logTime = useCallback((taskId: string, hours: number, loggedBy: string) => {
-    if (hours <= 0) return;
-    setTimeEntries((prev) => [...prev, {
-      id: crypto.randomUUID(),
-      task_id: taskId,
-      date: new Date().toISOString().slice(0, 10),
-      hours,
-      logged_by: loggedBy,
-    }]);
-    setTasks((prev) => prev.map((task) => task.id === taskId ? { ...task, worked_hours: Math.round((task.worked_hours + hours) * 10) / 10 } : task));
-  }, []);
+    const logHours = useCallback(async (id: string, hours: number) => {
+        await logTime(id, hours, '');
+    }, [logTime]);
 
-  const addComment = useCallback((taskId: string, commenter: string, text: string) => {
-    if (!text.trim()) return;
-    setComments((prev) => [...prev, {
-      id: crypto.randomUUID(),
-      task_id: taskId,
-      commenter,
-      timestamp: new Date().toISOString(),
-      text: text.trim(),
-    }]);
-  }, []);
+    const addComment = useCallback(async (taskId: string, _commenter: string, text: string) => {
+        if (!text.trim()) return;
+        const employeeId = await currentEmployeeId();
+        if (!employeeId) {
+            setError('Could not determine the current employee.');
+            return;
+        }
+        const { error: insertError } = await supabase.from('task_comments').insert({ task_id: taskId, author_id: employeeId, body: text.trim() });
+        if (insertError) setError(insertError.message);
+        else await refresh();
+    }, [refresh]);
 
-  return { tasks, addTask, setStatus, logHours, timeEntries, comments, logTime, addComment };
+    return { tasks, addTask, setStatus, logHours, timeEntries, comments, logTime, addComment, loading, error, refresh };
 }

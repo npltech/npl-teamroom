@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { useClients } from '../data/clients';
+import { useCurrentEmployee } from '../data/currentUser';
 import { useEmployees } from '../data/employees';
 import { useProjects } from '../data/projects';
 import { useTasks, type TaskPriority, type TaskStatus } from '../data/tasks';
 import { useUsers } from '../data/users';
+import { StatusTag } from '../components/Ledger';
 import type { Role } from '../data/roles';
 
 type Context = { role: Role };
 
 const STATUS_LABEL: Record<TaskStatus, string> = { TODO: 'To do', IN_PROGRESS: 'In progress', COMPLETED: 'Completed' };
-const STATUS_COLOR: Record<TaskStatus, string> = { TODO: 'var(--status-neutral)', IN_PROGRESS: 'var(--status-pending)', COMPLETED: 'var(--status-present)' };
 const PRIORITY_LABEL: Record<TaskPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High' };
 const PRIORITY_COLOR: Record<TaskPriority, string> = { LOW: 'var(--status-neutral)', MEDIUM: 'var(--status-pending)', HIGH: 'var(--status-absent)' };
 const inputStyle = { borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' } as const;
@@ -23,12 +24,14 @@ export default function TaskDetailsPage() {
     const navigate = useNavigate();
     const { role } = useOutletContext<Context>();
     const { id } = useParams();
+    const currentEmployee = useCurrentEmployee(role);
     const { employees } = useEmployees();
-    const { clients } = useClients();
-    const { projects } = useProjects();
+    const { clients, loading: clientsLoading, error: clientsError } = useClients();
+    const { projects, loading: projectsLoading, error: projectsError } = useProjects();
     const { users } = useUsers();
-    const { tasks, setStatus, timeEntries, comments, logTime, addComment } = useTasks();
+    const { tasks, setStatus, timeEntries, comments, logTime, addComment, loading: tasksLoading, error: tasksError } = useTasks();
     const task = tasks.find((item) => item.id === id) ?? null;
+    const canViewTask = role !== 'EMPLOYEE' || (currentEmployee !== null && task?.assigned_to === currentEmployee.id);
     const [selectedStatus, setSelectedStatus] = useState<TaskStatus>(task?.status ?? 'TODO');
     const [hoursInput, setHoursInput] = useState('');
     const [commentInput, setCommentInput] = useState('');
@@ -41,7 +44,14 @@ export default function TaskDetailsPage() {
     const taskTimeEntries = useMemo(() => timeEntries.filter((entry) => entry.task_id === id).sort((a, b) => a.date.localeCompare(b.date)), [timeEntries, id]);
     const taskComments = useMemo(() => comments.filter((comment) => comment.task_id === id).sort((a, b) => a.timestamp.localeCompare(b.timestamp)), [comments, id]);
 
-    if (!task) {
+    if (clientsLoading || projectsLoading || tasksLoading) {
+        return <p className="py-12 text-center font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Loading task...</p>;
+    }
+    if (clientsError || projectsError || tasksError) {
+        return <p className="py-12 text-center text-sm" style={{ color: 'var(--status-absent)' }}>{clientsError ?? projectsError ?? tasksError}</p>;
+    }
+
+    if (!task || !canViewTask) {
         return (
             <div className="mx-auto max-w-xl border bg-white p-8" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
                 <h1 className="text-2xl font-semibold" style={{ color: 'var(--ink)' }}>Task not found</h1>
@@ -77,7 +87,7 @@ export default function TaskDetailsPage() {
                         <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Assigned to {assigneeName} · Assigned by {assignedByName}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <span className="font-mono px-2 py-1 text-[11px] uppercase" style={{ background: `${STATUS_COLOR[task.status]}20`, color: STATUS_COLOR[task.status], borderRadius: 'var(--radius-sm)' }}>{STATUS_LABEL[task.status]}</span>
+                        <StatusTag status={task.status === 'COMPLETED' ? 'present' : task.status === 'IN_PROGRESS' ? 'pending' : 'neutral'} label={STATUS_LABEL[task.status]} />
                         <span className="font-mono px-2 py-1 text-[11px] uppercase" style={{ background: `${PRIORITY_COLOR[task.priority]}20`, color: PRIORITY_COLOR[task.priority], borderRadius: 'var(--radius-sm)' }}>{PRIORITY_LABEL[task.priority]}</span>
                     </div>
                 </div>

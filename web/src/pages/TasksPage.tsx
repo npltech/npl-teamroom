@@ -137,9 +137,9 @@ export default function TasksPage() {
   const { role } = useOutletContext<Ctx>();
   const employee = useCurrentEmployee(role);
   const { employees } = useEmployees();
-  const { clients } = useClients();
-  const { projects } = useProjects();
-  const { tasks, addTask, setStatus, logHours } = useTasks();
+  const { clients, loading: clientsLoading, error: clientsError } = useClients();
+  const { projects, loading: projectsLoading, error: projectsError } = useProjects();
+  const { tasks, addTask, setStatus, logHours, loading: tasksLoading, error: tasksError } = useTasks();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -150,6 +150,9 @@ export default function TasksPage() {
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'ALL'>('ALL');
+  const [clientFilter, setClientFilter] = useState('ALL');
+  const [projectFilter, setProjectFilter] = useState('ALL');
 
   const canAssign = role === 'MANAGER' || role === 'HR' || role === 'SUPER_ADMIN';
 
@@ -164,6 +167,11 @@ export default function TasksPage() {
     [projects, selectedClientId],
   );
 
+  const filterProjects = useMemo(
+    () => projects.filter((project) => clientFilter === 'ALL' || project.client_id === clientFilter),
+    [projects, clientFilter],
+  );
+
   const visibleTasks = useMemo(() => {
     if (role === 'HR' || role === 'SUPER_ADMIN') return tasks;
     if (role === 'MANAGER' && employee) {
@@ -174,13 +182,29 @@ export default function TasksPage() {
     return [];
   }, [role, employee, employees, tasks]);
 
+  const filteredTasks = useMemo(
+    () => visibleTasks.filter((task) =>
+      (statusFilter === 'ALL' || task.status === statusFilter)
+      && (clientFilter === 'ALL' || task.client_id === clientFilter)
+      && (projectFilter === 'ALL' || task.project_id === projectFilter),
+    ),
+    [visibleTasks, statusFilter, clientFilter, projectFilter],
+  );
+
   const nameFor = (id: string) => employees.find((e) => e.id === id)?.name ?? 'Unknown';
   const clientNameFor = (id: string) => clients.find((client) => client.id === id)?.name ?? 'Unknown';
   const projectNameFor = (id: string) => projects.find((project) => project.id === id)?.name ?? 'Unknown';
   const today = new Date().toISOString().slice(0, 10);
-  const openCount = visibleTasks.filter((t) => t.status !== 'COMPLETED').length;
-  const overdueCount = visibleTasks.filter((t) => t.status !== 'COMPLETED' && t.due_date < today).length;
-  const completedCount = visibleTasks.filter((t) => t.status === 'COMPLETED').length;
+  const openCount = filteredTasks.filter((t) => t.status !== 'COMPLETED').length;
+  const overdueCount = filteredTasks.filter((t) => t.status !== 'COMPLETED' && t.due_date < today).length;
+  const completedCount = filteredTasks.filter((t) => t.status === 'COMPLETED').length;
+
+  if (clientsLoading || projectsLoading || tasksLoading) {
+    return <p className="py-12 text-center font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Loading tasks...</p>;
+  }
+  if (clientsError || projectsError || tasksError) {
+    return <p className="py-12 text-center text-sm" style={{ color: 'var(--status-absent)' }}>{clientsError ?? projectsError ?? tasksError}</p>;
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -235,13 +259,30 @@ export default function TasksPage() {
         <StatCard label="Completed" value={completedCount} status="present" />
       </div>
 
+      {role !== 'EMPLOYEE' && (
+        <div className="mt-6 flex flex-wrap gap-3">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | 'ALL')} className="border px-3 py-2 text-sm outline-none" style={inputStyle} aria-label="Filter by status">
+            <option value="ALL">All statuses</option>
+            {STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}
+          </select>
+          <select value={clientFilter} onChange={(e) => { setClientFilter(e.target.value); setProjectFilter('ALL'); }} className="border px-3 py-2 text-sm outline-none" style={inputStyle} aria-label="Filter by client">
+            <option value="ALL">All clients</option>
+            {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+          </select>
+          <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="border px-3 py-2 text-sm outline-none" style={inputStyle} aria-label="Filter by project">
+            <option value="ALL">All projects</option>
+            {filterProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+        </div>
+      )}
+
       <div className="mt-6 border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
-        {visibleTasks.length === 0 ? (
+        {filteredTasks.length === 0 ? (
           <p className="px-5 py-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
             No tasks to show.
           </p>
         ) : (
-          visibleTasks.map((t) => (
+          filteredTasks.map((t) => (
             <TaskRow
               key={t.id}
               task={t}

@@ -21,7 +21,7 @@ import EmployeeAttendanceDetailPage from './pages/EmployeeAttendanceDetailPage';
 import RecruitmentPage from './pages/RecruitmentPage';
 import OnboardingPage from './pages/OnboardingPage';
 import AppShell from './layouts/AppShell';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute, { RoleProtectedRoute } from './components/ProtectedRoute';
 
 export default function App() {
   return (
@@ -49,8 +49,14 @@ export default function App() {
           <Route path="org-chart" element={<OrgChartPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="clients" element={<ClientsPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
+          <Route
+            path="clients"
+            element={<RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'HR', 'MANAGER']}><ClientsPage /></RoleProtectedRoute>}
+          />
+          <Route
+            path="projects"
+            element={<RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'HR', 'MANAGER']}><ProjectsPage /></RoleProtectedRoute>}
+          />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="tasks/:id" element={<TaskDetailsPage />} />
           <Route path="users" element={<UsersPage />} />

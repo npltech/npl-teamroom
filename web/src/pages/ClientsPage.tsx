@@ -24,8 +24,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function ClientsPage() {
     const { role } = useOutletContext<Ctx>();
     const canManage = role === 'SUPER_ADMIN' || role === 'HR' || role === 'MANAGER';
-    const { clients, addClient, updateClient, toggleStatus } = useClients();
-    const { projects } = useProjects();
+    const { clients, addClient, updateClient, toggleStatus, loading: clientsLoading, error: clientsError } = useClients();
+    const { projects, loading: projectsLoading, error: projectsError } = useProjects();
 
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -48,6 +48,13 @@ export default function ClientsPage() {
         () => projects.filter((project) => project.client_id === selectedClient?.id),
         [projects, selectedClient],
     );
+
+    if (clientsLoading || projectsLoading) {
+        return <p className="py-12 text-center font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Loading clients...</p>;
+    }
+    if (clientsError || projectsError) {
+        return <p className="py-12 text-center text-sm" style={{ color: 'var(--status-absent)' }}>{clientsError ?? projectsError}</p>;
+    }
 
     function resetForm() {
         setEditingId(null);
@@ -108,7 +115,7 @@ export default function ClientsPage() {
         <div>
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--status-structure)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--accent-structure)' }}>
                         Clients
                     </p>
                     <h1 className="font-display mt-1 text-2xl font-semibold" style={{ color: 'var(--ink)' }}>

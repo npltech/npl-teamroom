@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
 
@@ -6,6 +7,7 @@ export interface Project {
     id: string;
     name: string;
     client_id: string;
+    client_name?: string;
     description: string;
     start_date: string;
     deadline: string;
@@ -13,109 +15,113 @@ export interface Project {
     team_member_ids: string[];
 }
 
-const STORAGE_KEY = 'roster.projects';
+type ProjectRow = {
+    id: string;
+    client_id: string;
+    name: string;
+    description: string | null;
+    start_date: string | null;
+    deadline: string | null;
+    status: 'Active' | 'On Hold' | 'Completed';
+    clients?: { name: string } | Array<{ name: string }> | null;
+    project_members?: Array<{ employee_id: string }>;
+};
 
-function getDefaultClientId(): string | null {
-    try {
-        const raw = localStorage.getItem('roster.clients');
-        if (!raw) return null;
-        const clients = JSON.parse(raw) as Array<{ id: string; name: string }>;
-        return clients.find((client) => client.name === 'Northern Planet')?.id ?? clients[0]?.id ?? null;
-    } catch {
-        return null;
-    }
+function fromRow(row: ProjectRow): Project {
+    return {
+        id: row.id,
+        name: row.name,
+        client_id: row.client_id,
+        client_name: Array.isArray(row.clients) ? row.clients[0]?.name : row.clients?.name,
+        description: row.description ?? '',
+        start_date: row.start_date ?? '',
+        deadline: row.deadline ?? '',
+        status: row.status === 'Active' ? 'ACTIVE' : row.status === 'On Hold' ? 'ON_HOLD' : 'COMPLETED',
+        team_member_ids: (row.project_members ?? []).map((member) => member.employee_id),
+    };
 }
 
-const SEED_PROJECTS: Project[] = [
-    {
-        id: 'p1',
-        name: 'Website Revamp',
-        client_id: 'c1',
-        description: 'Full redesign of the public marketing website and conversion funnel.',
-        start_date: '2026-06-01',
-        deadline: '2026-09-30',
-        status: 'ACTIVE',
-        team_member_ids: ['e4', 'e6', 'e7'],
-    },
-    {
-        id: 'p2',
-        name: 'HR Portal Refresh',
-        client_id: 'c1',
-        description: 'Modernized employee and attendance experience for the internal HR portal.',
-        start_date: '2026-07-14',
-        deadline: '2026-10-15',
-        status: 'ACTIVE',
-        team_member_ids: ['e3', 'e5', 'e12'],
-    },
-    {
-        id: 'p3',
-        name: 'Campaign Analytics Suite',
-        client_id: 'c1',
-        description: 'Dashboarding improvements and KPI reporting features.',
-        start_date: '2026-05-10',
-        deadline: '2026-08-25',
-        status: 'ON_HOLD',
-        team_member_ids: ['e1', 'e9', 'e10'],
-    },
-];
-
-function load(): Project[] {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) {
-            const defaultClientId = getDefaultClientId();
-            const seed = SEED_PROJECTS.map((project) => ({
-                ...project,
-                client_id: defaultClientId ?? project.client_id,
-            }));
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-            return seed;
-        }
-
-        const parsed = JSON.parse(raw) as Project[];
-        if (!Array.isArray(parsed)) {
-            const defaultClientId = getDefaultClientId();
-            const seed = SEED_PROJECTS.map((project) => ({
-                ...project,
-                client_id: defaultClientId ?? project.client_id,
-            }));
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-            return seed;
-        }
-
-        return parsed;
-    } catch {
-        return SEED_PROJECTS;
-    }
+function toRow(payload: Omit<Project, 'id'> | Partial<Omit<Project, 'id'>>) {
+    const { client_name: _clientName, team_member_ids: _teamMemberIds, ...fields } = payload;
+    return {
+        ...fields,
+        ...(payload.status ? { status: payload.status === 'ACTIVE' ? 'Active' : payload.status === 'ON_HOLD' ? 'On Hold' : 'Completed' } : {}),
+        ...(payload.description !== undefined ? { description: payload.description || null } : {}),
+        ...(payload.start_date !== undefined ? { start_date: payload.start_date || null } : {}),
+        ...(payload.deadline !== undefined ? { deadline: payload.deadline || null } : {}),
+    };
 }
+
+const SELECT = 'id, client_id, name, description, start_date, deadline, status, clients(name), project_members(employee_id)';
 
 export function useProjects() {
-    const [projects, setProjects] = useState<Project[]>(() => load());
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    }, [projects]);
-
-    const addProject = useCallback((payload: Omit<Project, 'id'>) => {
-        setProjects((prev) => [{ ...payload, id: crypto.randomUUID() }, ...prev]);
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        const { data, error: fetchError } = await supabase.from('projects').select(SELECT).order('name');
+        if (fetchError) {
+            setError(fetchError.message);
+        } else {
+            setError(null);
+            setProjects((data ?? []).map((row) => fromRow(row as ProjectRow)));
+        }
+        setLoading(false);
     }, []);
 
-    const updateProject = useCallback((id: string, patch: Partial<Omit<Project, 'id'>>) => {
-        setProjects((prev) => prev.map((project) => (project.id === id ? { ...project, ...patch } : project)));
-    }, []);
+    useEffect(() => { void refresh(); }, [refresh]);
 
-    const toggleStatus = useCallback((id: string) => {
-        setProjects((prev) =>
-            prev.map((project) =>
-                project.id === id
-                    ? {
-                        ...project,
-                        status: project.status === 'ACTIVE' ? 'ON_HOLD' : project.status === 'ON_HOLD' ? 'COMPLETED' : 'ACTIVE',
-                    }
-                    : project,
-            ),
-        );
-    }, []);
+    const addProject = useCallback(async (payload: Omit<Project, 'id'>) => {
+        const { team_member_ids, ...projectPayload } = payload;
+        const { data, error: insertError } = await supabase.from('projects').insert(toRow(projectPayload)).select(SELECT).single();
+        if (insertError) {
+            setError(insertError.message);
+            return null;
+        }
+        if (team_member_ids.length > 0) {
+            const { error: memberError } = await supabase.from('project_members').insert(team_member_ids.map((employee_id) => ({ project_id: data.id, employee_id })));
+            if (memberError) {
+                setError(memberError.message);
+                return null;
+            }
+        }
+        await refresh();
+        return data.id;
+    }, [refresh]);
 
-    return { projects, addProject, updateProject, toggleStatus };
+    const updateProject = useCallback(async (id: string, patch: Partial<Omit<Project, 'id'>>) => {
+        const { team_member_ids, ...projectPatch } = patch;
+        const { error: updateError } = await supabase.from('projects').update(toRow(projectPatch)).eq('id', id);
+        if (updateError) {
+            setError(updateError.message);
+            return updateError.message;
+        }
+        if (team_member_ids !== undefined) {
+            const { error: deleteError } = await supabase.from('project_members').delete().eq('project_id', id);
+            if (deleteError) {
+                setError(deleteError.message);
+                return deleteError.message;
+            }
+            if (team_member_ids.length > 0) {
+                const { error: memberError } = await supabase.from('project_members').insert(team_member_ids.map((employee_id) => ({ project_id: id, employee_id })));
+                if (memberError) {
+                    setError(memberError.message);
+                    return memberError.message;
+                }
+            }
+        }
+        await refresh();
+        return null;
+    }, [refresh]);
+
+    const toggleStatus = useCallback(async (id: string) => {
+        const current = projects.find((project) => project.id === id);
+        if (!current) return;
+        const nextStatus: ProjectStatus = current.status === 'ACTIVE' ? 'ON_HOLD' : current.status === 'ON_HOLD' ? 'COMPLETED' : 'ACTIVE';
+        await updateProject(id, { status: nextStatus });
+    }, [projects, updateProject]);
+
+    return { projects, loading, error, addProject, updateProject, toggleStatus, refresh };
 }

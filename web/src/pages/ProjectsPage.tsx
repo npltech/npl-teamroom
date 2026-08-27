@@ -26,10 +26,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function ProjectsPage() {
     const { role } = useOutletContext<Ctx>();
     const canManage = role === 'SUPER_ADMIN' || role === 'HR' || role === 'MANAGER';
-    const { clients } = useClients();
+    const { clients, loading: clientsLoading, error: clientsError } = useClients();
     const { employees } = useEmployees();
-    const { projects, addProject, updateProject, toggleStatus } = useProjects();
-    const { tasks } = useTasks();
+    const { projects, addProject, updateProject, toggleStatus, loading: projectsLoading, error: projectsError } = useProjects();
+    const { tasks, loading: tasksLoading, error: tasksError } = useTasks();
 
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -40,6 +40,13 @@ export default function ProjectsPage() {
     const [deadline, setDeadline] = useState('');
     const [status, setStatus] = useState<'ACTIVE' | 'ON_HOLD' | 'COMPLETED'>('ACTIVE');
     const [teamMembers, setTeamMembers] = useState<string[]>([]);
+
+    if (clientsLoading || projectsLoading || tasksLoading) {
+        return <p className="py-12 text-center font-mono text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Loading projects...</p>;
+    }
+    if (clientsError || projectsError || tasksError) {
+        return <p className="py-12 text-center text-sm" style={{ color: 'var(--status-absent)' }}>{clientsError ?? projectsError ?? tasksError}</p>;
+    }
 
     const nameForClient = (id: string) => clients.find((client) => client.id === id)?.name ?? 'Unknown';
     const nameForEmployee = (id: string) => employees.find((employee) => employee.id === id)?.name ?? 'Unknown';
@@ -103,12 +110,18 @@ export default function ProjectsPage() {
         if (!total) return 0;
         return Math.round((completedTaskCount(projectId) / total) * 100);
     };
+    const hoursVariance = (projectId: string) => {
+        const projectTasks = tasks.filter((task) => task.project_id === projectId);
+        const estimated = projectTasks.reduce((sum, task) => sum + task.estimated_hours, 0);
+        const logged = projectTasks.reduce((sum, task) => sum + task.worked_hours, 0);
+        return { logged, variance: Math.round((logged - estimated) * 10) / 10 };
+    };
 
     return (
         <div>
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--status-structure)' }}>
+                    <p className="font-mono text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--accent-structure)' }}>
                         Projects
                     </p>
                     <h1 className="font-display mt-1 text-2xl font-semibold" style={{ color: 'var(--ink)' }}>
@@ -166,7 +179,10 @@ export default function ProjectsPage() {
                                             <StatusTag status={project.status === 'ACTIVE' ? 'present' : project.status === 'COMPLETED' ? 'pending' : 'neutral'} label={project.status} />
                                         </td>
                                         <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--ink)' }}>
-                                            {projectProgress(project.id)}%
+                                            <div>{projectProgress(project.id)}%</div>
+                                            <div className="mt-1" style={{ color: hoursVariance(project.id).variance > 0 ? 'var(--status-absent)' : 'var(--status-present)' }}>
+                                                {hoursVariance(project.id).variance >= 0 ? '+' : ''}{hoursVariance(project.id).variance}h
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3 align-top font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
                                             {project.deadline}

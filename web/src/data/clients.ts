@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type ClientType = 'INTERNAL' | 'EXTERNAL';
 export type ClientStatus = 'ACTIVE' | 'INACTIVE';
@@ -16,77 +17,78 @@ export interface Client {
     status: ClientStatus;
 }
 
-const STORAGE_KEY = 'roster.clients';
+type ClientRow = Omit<Client, 'type' | 'status'> & { type: 'Internal' | 'External'; status: 'Active' | 'Inactive' };
 
-const DEFAULT_CLIENT: Client = {
-    id: 'c1',
-    name: 'Northern Planet',
-    contact_person: 'Amelia Stone',
-    email: 'amelia@northplanet.co',
-    phone: '+91 98765 43210',
-    notes: 'Primary partner for digital growth and portal work.',
-    source: '',
-    type: 'INTERNAL',
-    status: 'ACTIVE',
-};
-
-function load(): Client[] {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) {
-            const existing = JSON.parse(localStorage.getItem('roster.clients') ?? 'null');
-            const seed = existing && Array.isArray(existing) && existing.length > 0 ? existing : [DEFAULT_CLIENT];
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-            return seed;
-        }
-
-        const parsed = JSON.parse(raw) as Client[];
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify([DEFAULT_CLIENT]));
-            return [DEFAULT_CLIENT];
-        }
-
-        const exists = parsed.some((client) => client.name.toLowerCase() === DEFAULT_CLIENT.name.toLowerCase());
-        if (!exists) {
-            const next = [DEFAULT_CLIENT, ...parsed];
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-            return next;
-        }
-
-        return parsed;
-    } catch {
-        return [DEFAULT_CLIENT];
-    }
+function fromRow(row: ClientRow): Client {
+    return {
+        ...row,
+        contact_person: row.contact_person ?? '',
+        email: row.email ?? '',
+        phone: row.phone ?? '',
+        notes: row.notes ?? '',
+        source: row.source ?? '',
+        type: row.type === 'Internal' ? 'INTERNAL' : 'EXTERNAL',
+        status: row.status === 'Active' ? 'ACTIVE' : 'INACTIVE',
+    };
 }
 
+function toRow(payload: Omit<Client, 'id'> | Partial<Omit<Client, 'id'>>) {
+    return {
+        ...payload,
+        ...(payload.source !== undefined ? { source: payload.source || null } : {}),
+        ...(payload.type ? { type: payload.type === 'INTERNAL' ? 'Internal' : 'External' } : {}),
+        ...(payload.status ? { status: payload.status === 'ACTIVE' ? 'Active' : 'Inactive' } : {}),
+    };
+}
+
+const SELECT = 'id, name, contact_person, email, phone, notes, source, type, status';
+
 export function useClients() {
-    const [clients, setClients] = useState<Client[]>(() => load());
+    const [clients, setClients] = useState<Client[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
-    }, [clients]);
-
-    const addClient = useCallback((payload: Omit<Client, 'id'>) => {
-        setClients((prev) => {
-            const exists = prev.some((client) => client.name.trim().toLowerCase() === payload.name.trim().toLowerCase());
-            if (exists) return prev;
-            return [{ ...payload, id: crypto.randomUUID() }, ...prev];
-        });
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        const { data, error: fetchError } = await supabase.from('clients').select(SELECT).order('name');
+        if (fetchError) {
+            setError(fetchError.message);
+        } else {
+            setError(null);
+            setClients((data ?? []).map((row) => fromRow(row as ClientRow)));
+        }
+        setLoading(false);
     }, []);
 
-    const updateClient = useCallback((id: string, patch: Partial<Omit<Client, 'id'>>) => {
-        setClients((prev) => prev.map((client) => (client.id === id ? { ...client, ...patch } : client)));
+    useEffect(() => { void refresh(); }, [refresh]);
+
+    const addClient = useCallback(async (payload: Omit<Client, 'id'>) => {
+        const { data, error: insertError } = await supabase.from('clients').insert(toRow(payload)).select(SELECT).single();
+        if (insertError) {
+            setError(insertError.message);
+            return null;
+        }
+        const client = fromRow(data as ClientRow);
+        setClients((prev) => [client, ...prev].sort((a, b) => a.name.localeCompare(b.name)));
+        return client.id;
     }, []);
 
-    const toggleStatus = useCallback((id: string) => {
-        setClients((prev) =>
-            prev.map((client) =>
-                client.id === id
-                    ? { ...client, status: client.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }
-                    : client,
-            ),
-        );
+    const updateClient = useCallback(async (id: string, patch: Partial<Omit<Client, 'id'>>) => {
+        const { data, error: updateError } = await supabase.from('clients').update(toRow(patch)).eq('id', id).select(SELECT).single();
+        if (updateError) {
+            setError(updateError.message);
+            return updateError.message;
+        }
+        const client = fromRow(data as ClientRow);
+        setClients((prev) => prev.map((item) => item.id === id ? client : item).sort((a, b) => a.name.localeCompare(b.name)));
+        return null;
     }, []);
 
-    return { clients, addClient, updateClient, toggleStatus };
+    const toggleStatus = useCallback(async (id: string) => {
+        const current = clients.find((client) => client.id === id);
+        if (!current) return;
+        await updateClient(id, { status: current.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
+    }, [clients, updateClient]);
+
+    return { clients, loading, error, addClient, updateClient, toggleStatus, refresh };
 }
