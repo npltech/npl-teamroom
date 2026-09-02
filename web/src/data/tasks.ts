@@ -26,8 +26,8 @@ export interface Task {
 export interface TaskTimeEntry {
     id: string;
     task_id: string;
-    date: string;
     hours: number;
+    logged_at: string;
     logged_by: string;
 }
 
@@ -123,7 +123,7 @@ export function useTasks() {
             setTasks((taskResult.data ?? []).map((row) => fromTaskRow(row as TaskRow)));
             setTimeEntries((logResult.data ?? []).map((row) => {
                 const item = row as TimeLogRow;
-                return { id: item.id, task_id: item.task_id, date: item.logged_at, hours: Number(item.hours), logged_by: first(item.employees)?.name ?? item.logged_by ?? 'Unknown' };
+                return { id: item.id, task_id: item.task_id, logged_at: item.logged_at, hours: Number(item.hours), logged_by: first(item.employees)?.name ?? item.logged_by ?? 'Unknown' };
             }));
             setComments((commentResult.data ?? []).map((row) => {
                 const item = row as CommentRow;
@@ -175,25 +175,26 @@ export function useTasks() {
         else setTasks((prev) => prev.map((task) => task.id === id ? { ...task, status } : task));
     }, []);
 
-    const logTime = useCallback(async (taskId: string, hours: number, _loggedBy: string) => {
-        if (hours <= 0) return;
+    const logTime = useCallback(async (taskId: string, hours: number): Promise<string | null> => {
+        if (!Number.isFinite(hours) || hours <= 0) return 'Enter a number of hours greater than 0.';
         const employeeId = await currentEmployeeId();
         if (!employeeId) {
-            setError('Could not determine the current employee.');
-            return;
+            const message = 'Could not determine the current employee.';
+            setError(message);
+            return message;
         }
         const { error: insertError } = await supabase.from('task_time_logs').insert({ task_id: taskId, logged_by: employeeId, hours });
         if (insertError) {
             setError(insertError.message);
-            return;
+            return insertError.message;
         }
 
-        setTasks((prev) => prev.map((task) => task.id === taskId ? { ...task, worked_hours: Number((task.worked_hours + hours).toFixed(2)) } : task));
         await refresh();
+        return null;
     }, [refresh]);
 
     const logHours = useCallback(async (id: string, hours: number) => {
-        await logTime(id, hours, '');
+        await logTime(id, hours);
     }, [logTime]);
 
     const addComment = useCallback(async (taskId: string, _commenter: string, text: string) => {

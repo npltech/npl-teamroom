@@ -53,7 +53,7 @@ function TaskRow({
           )}
         </p>
         <p className="truncate text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {clientName && projectName ? `${clientName} · ${projectName}` : task.description}
+          {clientName && projectName ? `${clientName} / ${projectName}` : task.description}
         </p>
         <p className="mt-1 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
           {task.description}
@@ -132,8 +132,6 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'ALL'>('ALL');
   const [clientFilter, setClientFilter] = useState('ALL');
   const [projectFilter, setProjectFilter] = useState('ALL');
-
-  const canAssign = role === 'MANAGER' || role === 'HR' || role === 'SUPER_ADMIN';
   const showCreateTaskButton = role !== 'EMPLOYEE';
 
   const filterProjects = useMemo(
@@ -206,17 +204,7 @@ export default function TasksPage() {
         <StatCard label="Completed" value={completedCount} status="present" />
       </div>
 
-      {showCreateTaskButton && canAssign && (
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={() => navigate('/tasks/new')}
-            className="px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-            style={{ background: 'var(--ink)', color: 'var(--text-on-ink)', borderRadius: 'var(--radius-sm)' }}
-          >
-            + New task
-          </button>
-        </div>
-      )}
+
 
       {role !== 'EMPLOYEE' && (
         <div className="mt-6 flex flex-wrap gap-3">

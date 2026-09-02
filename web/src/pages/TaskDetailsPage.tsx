@@ -20,6 +20,11 @@ function formatTimestamp(value: string): string {
     return new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatTimeLogTimestamp(value: string): string {
+    const timestamp = new Date(value);
+    return `${timestamp.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} · ${timestamp.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 export default function TaskDetailsPage() {
     const navigate = useNavigate();
     const { role } = useOutletContext<Context>();
@@ -41,7 +46,9 @@ export default function TaskDetailsPage() {
     const clientName = task ? clients.find((client) => client.id === task.client_id)?.name ?? task.client_name : undefined;
     const projectName = task ? projects.find((project) => project.id === task.project_id)?.name ?? task.project_name : undefined;
     const currentUser = users.find((user) => user.role === role)?.name ?? 'Current user';
-    const taskTimeEntries = useMemo(() => timeEntries.filter((entry) => entry.task_id === id).sort((a, b) => a.date.localeCompare(b.date)), [timeEntries, id]);
+    const [timeLogMessage, setTimeLogMessage] = useState<string | null>(null);
+    const [timeLogSuccess, setTimeLogSuccess] = useState(false);
+    const taskTimeEntries = useMemo(() => timeEntries.filter((entry) => entry.task_id === id).sort((a, b) => b.logged_at.localeCompare(a.logged_at)), [timeEntries, id]);
     const taskComments = useMemo(() => comments.filter((comment) => comment.task_id === id).sort((a, b) => a.timestamp.localeCompare(b.timestamp)), [comments, id]);
 
     if (clientsLoading || projectsLoading || tasksLoading) {
@@ -60,12 +67,24 @@ export default function TaskDetailsPage() {
         );
     }
 
-    function handleLogTime() {
+    async function handleLogTime() {
         if (!task) return;
         const hours = Number(hoursInput);
-        if (!Number.isFinite(hours) || hours <= 0) return;
-        logTime(task.id, hours, currentUser);
+        if (!Number.isFinite(hours) || hours <= 0) {
+            setTimeLogSuccess(false);
+            setTimeLogMessage('Enter a number of hours greater than 0.');
+            return;
+        }
+        setTimeLogMessage(null);
+        setTimeLogSuccess(false);
+        const error = await logTime(task.id, hours);
+        if (error) {
+            setTimeLogMessage(error);
+            return;
+        }
         setHoursInput('');
+        setTimeLogSuccess(true);
+        setTimeLogMessage('Time logged successfully.');
     }
 
     function handlePostComment() {
@@ -100,16 +119,19 @@ export default function TaskDetailsPage() {
                     <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Due date</p><p className="mt-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>{task.due_date}</p></div>
                     <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Estimated hours</p><p className="mt-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>{task.estimated_hours}h</p></div>
                     <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Logged hours</p><p className="mt-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>{task.worked_hours}h</p></div>
-                    <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Project / Client</p><p className="mt-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>{projectName && clientName ? `${projectName} · ${clientName}` : 'Not linked'}</p></div>
+                    <div><p className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Project / Client</p><p className="mt-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>{projectName && clientName ? `${projectName} / ${clientName}` : 'Not linked'}</p></div>
                 </div>
             </section>
 
             <section className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
-                <div className="border-b px-5 py-3.5" style={{ borderColor: 'var(--line-soft)' }}><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Time log</h2></div>
-                <div className="divide-y" style={{ borderColor: 'var(--line-soft)' }}>
-                    {taskTimeEntries.length === 0 ? <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>No time entries yet.</p> : taskTimeEntries.map((entry) => <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm"><span style={{ color: 'var(--ink)' }}>{entry.date}</span><span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{entry.hours}h</span><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Logged by {entry.logged_by}</span></div>)}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4" style={{ borderColor: 'var(--line-soft)' }}>
+                    <div><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Time log</h2><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>Track the work recorded against this task.</p></div>
+                    <div className="flex flex-wrap items-center gap-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}><span>{taskTimeEntries.length} {taskTimeEntries.length === 1 ? 'entry' : 'entries'}</span><span aria-label="Remaining hours">{Math.max(0, task.estimated_hours - task.worked_hours)}h remaining</span></div>
                 </div>
-                <div className="flex gap-2 border-t p-4" style={{ borderColor: 'var(--line-soft)' }}><input type="number" min="0.5" step="0.5" value={hoursInput} onChange={(e) => setHoursInput(e.target.value)} placeholder="Hours" className="w-32 border px-3 py-2 text-sm" style={inputStyle} /><button onClick={handleLogTime} className="px-3 py-2 text-sm font-medium" style={{ background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Log</button></div>
+                <div className="divide-y" style={{ borderColor: 'var(--line-soft)' }}>
+                    {taskTimeEntries.length === 0 ? <p className="px-5 py-7 text-sm" style={{ color: 'var(--text-muted)' }}>No time entries yet.</p> : taskTimeEntries.map((entry) => <div key={entry.id} className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-5 py-4"><div className="min-w-[12rem] flex-1"><p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{entry.logged_by}</p><p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{formatTimeLogTimestamp(entry.logged_at)}</p></div><span className="font-mono text-sm font-medium" style={{ color: 'var(--accent-holiday)' }}>{entry.hours} {entry.hours === 1 ? 'hour' : 'hours'}</span></div>)}
+                </div>
+                <div className="border-t p-4" style={{ borderColor: 'var(--line-soft)', background: 'var(--paper)' }}><div className="flex flex-col gap-2 sm:flex-row"><label className="sr-only" htmlFor="task-hours">Hours logged</label><input id="task-hours" type="number" min="0.1" step="0.1" value={hoursInput} onChange={(e) => setHoursInput(e.target.value)} placeholder="Hours worked" className="min-w-0 flex-1 border px-3 py-2 text-sm outline-none" style={inputStyle} /><button onClick={() => void handleLogTime()} className="px-4 py-2 text-sm font-medium" style={{ background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Add time</button></div>{timeLogMessage && <p className="mt-2 text-xs" style={{ color: timeLogSuccess ? 'var(--status-present)' : 'var(--status-absent)' }} role="status">{timeLogMessage}</p>}</div>
             </section>
 
             <section className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>

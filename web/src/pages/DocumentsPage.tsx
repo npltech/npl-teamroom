@@ -174,10 +174,7 @@ export default function DocumentsPage() {
             filtered.map((d) => (
               <div
                 key={d.id}
-                onClick={async () => {
-                  setSelectedDocumentId(d.id);
-                  await handleOpen(d);
-                }}
+                onClick={() => setSelectedDocumentId(d.id)}
                 className="flex cursor-pointer items-start gap-4 border-b px-5 py-3.5 transition-colors hover:bg-[var(--paper)] last:border-b-0"
                 style={{ borderColor: 'var(--line-soft)' }}
               >
