@@ -1,9 +1,10 @@
 import { useEmployees, type Employee } from './employees';
 import type { Role } from './roles';
+import { useAuth } from '../contexts/AuthContext';
 
-// Demo-only: in the real app this comes from the authenticated Supabase user's
-// profile row (profiles.employee_id), not a role->id lookup table.
+// Demo-only fallback when no authenticated profile is available yet.
 const CURRENT_EMPLOYEE_BY_ROLE: Partial<Record<Role, string>> = {
+  SUPER_ADMIN: 'e1', // Super Admin user
   HR: 'e12', // Anita Rao — HR Executive
   MANAGER: 'e6', // Vikram Joshi — Engineering Manager
   EMPLOYEE: 'e3', // Arjun Sinha
@@ -11,7 +12,8 @@ const CURRENT_EMPLOYEE_BY_ROLE: Partial<Record<Role, string>> = {
 
 export function useCurrentEmployee(role: Role): Employee | null {
   const { employees } = useEmployees();
-  const id = CURRENT_EMPLOYEE_BY_ROLE[role];
+  const { profile } = useAuth();
+  const id = profile?.employee_id ?? CURRENT_EMPLOYEE_BY_ROLE[role] ?? null;
   if (!id) return null;
   return employees.find((e) => e.id === id) ?? null;
 }

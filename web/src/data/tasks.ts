@@ -10,6 +10,7 @@ export interface Task {
     description: string;
     assigned_to: string;
     assigned_by: string;
+    assigned_by_name?: string;
     client_id: string;
     client_name?: string;
     project_id: string;
@@ -52,6 +53,9 @@ type TaskRow = {
     logged_hours: number | null;
     due_date: string | null;
     created_at: string;
+    project?: Relation<{ name: string; client_id: string; client?: Relation<{ name: string }> }>;
+    assigner?: Relation<{ name: string }>;
+    assignee?: Relation<{ name: string }>;
     projects?: Relation<{ name: string; client_id: string; clients?: Relation<{ name: string }> }>;
 };
 
@@ -63,15 +67,18 @@ function first<T>(relation: Relation<T> | undefined): T | undefined {
 }
 
 function fromTaskRow(row: TaskRow): Task {
-    const project = first(row.projects);
+    const project = first(row.project ?? row.projects);
+    const projectClient = project && 'client' in project ? project.client : undefined;
+    const legacyClientName = 'clients' in (project ?? {}) ? first((project as any)?.clients)?.name : undefined;
     return {
         id: row.id,
         title: row.title,
         description: row.description ?? '',
         assigned_to: row.assigned_to ?? '',
         assigned_by: row.assigned_by ?? '',
+        assigned_by_name: first(row.assigner)?.name ?? first(row.assigner as any)?.name ?? undefined,
         client_id: project?.client_id ?? '',
-        client_name: first(project?.clients)?.name,
+        client_name: first(projectClient)?.name ?? legacyClientName,
         project_id: row.project_id,
         project_name: project?.name,
         status: row.status === 'To Do' ? 'TODO' : row.status === 'In Progress' ? 'IN_PROGRESS' : 'COMPLETED',
@@ -90,7 +97,7 @@ async function currentEmployeeId(): Promise<string | null> {
     return data?.employee_id ?? null;
 }
 
-const TASK_SELECT = 'id, title, description, project_id, status, priority, assigned_to, assigned_by, estimated_hours, logged_hours, due_date, created_at, projects(name, client_id, clients(name))';
+const TASK_SELECT = 'id, title, description, project_id, status, priority, assigned_to, assigned_by, estimated_hours, logged_hours, due_date, created_at, project:projects(name, client_id, client:clients(name)), assigner:employees!tasks_assigned_by_fkey(name), assignee:employees!tasks_assigned_to_fkey(name)';
 const LOG_SELECT = 'id, task_id, logged_by, hours, logged_at, employees(name)';
 const COMMENT_SELECT = 'id, task_id, author_id, body, created_at, employees(name)';
 
@@ -140,13 +147,25 @@ export function useTasks() {
         due_date: string;
     }) => {
         const { client_id: _clientId, ...taskPayload } = payload;
-        const { error: insertError } = await supabase.from('tasks').insert({
+        const { data, error: insertError } = await supabase.from('tasks').insert({
             ...taskPayload,
             status: 'To Do',
             priority: payload.priority === 'LOW' ? 'Low' : payload.priority === 'MEDIUM' ? 'Medium' : 'High',
-        });
-        if (insertError) setError(insertError.message);
-        else await refresh();
+        }).select(TASK_SELECT).single();
+
+        if (insertError) {
+            setError(insertError.message);
+            return;
+        }
+
+        if (data) {
+            const created = fromTaskRow(data as TaskRow);
+            setTasks((prev) => [created, ...prev].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+            setError(null);
+            return;
+        }
+
+        await refresh();
     }, [refresh]);
 
     const setStatus = useCallback(async (id: string, status: TaskStatus) => {
@@ -164,8 +183,13 @@ export function useTasks() {
             return;
         }
         const { error: insertError } = await supabase.from('task_time_logs').insert({ task_id: taskId, logged_by: employeeId, hours });
-        if (insertError) setError(insertError.message);
-        else await refresh();
+        if (insertError) {
+            setError(insertError.message);
+            return;
+        }
+
+        setTasks((prev) => prev.map((task) => task.id === taskId ? { ...task, worked_hours: Number((task.worked_hours + hours).toFixed(2)) } : task));
+        await refresh();
     }, [refresh]);
 
     const logHours = useCallback(async (id: string, hours: number) => {

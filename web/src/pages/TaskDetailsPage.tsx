@@ -36,10 +36,10 @@ export default function TaskDetailsPage() {
     const [hoursInput, setHoursInput] = useState('');
     const [commentInput, setCommentInput] = useState('');
 
-    const assigneeName = task ? employees.find((employee) => employee.id === task.assigned_to)?.name ?? 'Unknown' : 'Unknown';
-    const assignedByName = task ? employees.find((employee) => employee.id === task.assigned_by)?.name ?? 'Unknown' : 'Unknown';
-    const clientName = task ? clients.find((client) => client.id === task.client_id)?.name : undefined;
-    const projectName = task ? projects.find((project) => project.id === task.project_id)?.name : undefined;
+    const assigneeName = task ? employees.find((employee) => employee.id === task.assigned_to)?.name ?? task.assigned_by_name ?? 'Unknown' : 'Unknown';
+    const assignedByName = task ? employees.find((employee) => employee.id === task.assigned_by)?.name ?? task.assigned_by_name ?? 'Unknown' : 'Unknown';
+    const clientName = task ? clients.find((client) => client.id === task.client_id)?.name ?? task.client_name : undefined;
+    const projectName = task ? projects.find((project) => project.id === task.project_id)?.name ?? task.project_name : undefined;
     const currentUser = users.find((user) => user.role === role)?.name ?? 'Current user';
     const taskTimeEntries = useMemo(() => timeEntries.filter((entry) => entry.task_id === id).sort((a, b) => a.date.localeCompare(b.date)), [timeEntries, id]);
     const taskComments = useMemo(() => comments.filter((comment) => comment.task_id === id).sort((a, b) => a.timestamp.localeCompare(b.timestamp)), [comments, id]);

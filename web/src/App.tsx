@@ -11,6 +11,7 @@ import OrgChartPage from './pages/OrgChartPage';
 import DocumentsPage from './pages/DocumentsPage';
 import ReportsPage from './pages/ReportsPage';
 import TasksPage from './pages/TasksPage';
+import NewTaskPage from './pages/NewTaskPage';
 import TaskDetailsPage from './pages/TaskDetailsPage';
 import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -58,6 +59,7 @@ export default function App() {
             element={<RoleProtectedRoute allowedRoles={['SUPER_ADMIN', 'HR', 'MANAGER']}><ProjectsPage /></RoleProtectedRoute>}
           />
           <Route path="tasks" element={<TasksPage />} />
+          <Route path="tasks/new" element={<NewTaskPage />} />
           <Route path="tasks/:id" element={<TaskDetailsPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="recruitment" element={<RecruitmentPage />} />

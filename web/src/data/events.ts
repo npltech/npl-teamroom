@@ -11,17 +11,6 @@ export interface CompanyEvent {
   image?: string | null;
 }
 
-function daysAhead(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-const SEED_EVENTS: Omit<CompanyEvent, 'id'>[] = [
-  { date: daysAhead(3), title: 'All-hands town hall', kind: 'announcement' },
-  { date: daysAhead(9), title: 'Q3 planning kickoff', kind: 'announcement' },
-];
-
 function anniversariesFrom(employees: Employee[]): CompanyEvent[] {
   return employees.flatMap((employee) => getComputedEmployeeEvents(employee))
     .filter((event) => event.kind === 'Anniversary')
@@ -52,7 +41,6 @@ export function useUpcomingEvents(employees: Employee[], limit = 4): CompanyEven
   return useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const all: CompanyEvent[] = [
-      ...SEED_EVENTS.map((e, i) => ({ ...e, id: `seed-${i}` })),
       ...birthdaysFrom(employees),
       ...anniversariesFrom(employees),
     ];

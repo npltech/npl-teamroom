@@ -29,17 +29,30 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
   const upcomingEvents = useUpcomingEvents(employees, 5);
 
   const items = useMemo<UpcomingItem[]>(() => {
-    const mixed: UpcomingItem[] = holidays.map((h) => ({
-      id: h.id,
-      date: h.date,
-      name: h.name,
-      category: h.category,
-      description: h.description ?? null,
-      image: h.image ?? null,
-      readOnly: false,
-    }));
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const seen = new Set<string>();
 
-    upcomingEvents.forEach((e) => {
+    const mixed: UpcomingItem[] = [];
+
+    for (const h of holidays) {
+      if (h.date < todayIso) continue;
+      if (seen.has(h.id)) continue;
+      seen.add(h.id);
+      mixed.push({
+        id: h.id,
+        date: h.date,
+        name: h.name,
+        category: h.category,
+        description: h.description ?? null,
+        image: h.image ?? null,
+        readOnly: false,
+      });
+    }
+
+    for (const e of upcomingEvents) {
+      if (e.date < todayIso) continue;
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
       mixed.push({
         id: e.id,
         date: e.date,
@@ -49,7 +62,7 @@ export function UpcomingHolidays({ canManage = false, employees = [] }: { canMan
         image: e.image ?? null,
         readOnly: true,
       });
-    });
+    }
 
     return mixed.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
   }, [holidays, upcomingEvents]);

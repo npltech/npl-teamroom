@@ -132,22 +132,22 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_time_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_comments ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY clients_select_managers ON public.clients
-  FOR SELECT TO authenticated USING (public.can_manage_work_modules());
+CREATE POLICY clients_select_authenticated ON public.clients
+  FOR SELECT TO authenticated USING (true);
 CREATE POLICY clients_write_managers ON public.clients
   FOR ALL TO authenticated
   USING (public.can_manage_work_modules())
   WITH CHECK (public.can_manage_work_modules());
 
-CREATE POLICY projects_select_managers ON public.projects
-  FOR SELECT TO authenticated USING (public.can_manage_work_modules());
+CREATE POLICY projects_select_authenticated ON public.projects
+  FOR SELECT TO authenticated USING (true);
 CREATE POLICY projects_write_managers ON public.projects
   FOR ALL TO authenticated
   USING (public.can_manage_work_modules())
   WITH CHECK (public.can_manage_work_modules());
 
-CREATE POLICY project_members_select_managers ON public.project_members
-  FOR SELECT TO authenticated USING (public.can_manage_work_modules());
+CREATE POLICY project_members_select_authenticated ON public.project_members
+  FOR SELECT TO authenticated USING (true);
 CREATE POLICY project_members_write_managers ON public.project_members
   FOR ALL TO authenticated
   USING (public.can_manage_work_modules())

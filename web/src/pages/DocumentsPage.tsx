@@ -12,7 +12,7 @@ const inputStyle = { borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)
 export default function DocumentsPage() {
   const { role } = useOutletContext<Ctx>();
   const canManage = role === 'SUPER_ADMIN' || role === 'HR';
-  const { documents, addDocument, removeDocument } = useCompanyDocuments();
+  const { documents, loading, error, addDocument, removeDocument, openDocument } = useCompanyDocuments();
 
   const [showModal, setShowModal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -22,6 +22,7 @@ export default function DocumentsPage() {
   const [filter, setFilter] = useState<'ALL' | CompanyDocCategory>('ALL');
   const [dragActive, setDragActive] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const filtered = filter === 'ALL' ? documents : documents.filter((d) => d.category === filter);
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
@@ -40,35 +41,78 @@ export default function DocumentsPage() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    setUploadError(null);
     const files = e.dataTransfer.files;
     if (files && files[0]) {
-      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-      if (validTypes.includes(files[0].type)) {
-        setFile(files[0]);
+      const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+      const file = files[0];
+      if (allowed.includes(file.type) || ['pdf', 'docx', 'xlsx'].includes(file.name.split('.').pop()?.toLowerCase() ?? '')) {
+        setFile(file);
+      } else {
+        setUploadError('Only PDF, DOCX, and XLSX files are allowed.');
       }
     }
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setUploadError(null);
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const chosen = e.target.files[0];
+      const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+      if (allowed.includes(chosen.type) || ['pdf', 'docx', 'xlsx'].includes(chosen.name.split('.').pop()?.toLowerCase() ?? '')) {
+        setFile(chosen);
+      } else {
+        setUploadError('Only PDF, DOCX, and XLSX files are allowed.');
+        setFile(null);
+      }
     }
   }
 
-  function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-    addDocument({
-      name: name.trim(),
-      category,
-      description: description.trim() || undefined,
-      file: file || undefined,
-    });
-    setName('');
-    setCategory('Policy');
-    setDescription('');
-    setFile(null);
-    setShowModal(false);
+    setUploadError(null);
+    if (!name.trim()) {
+      setUploadError('Document name is required.');
+      return;
+    }
+    if (!file) {
+      setUploadError('Please select a PDF, DOCX, or XLSX file.');
+      return;
+    }
+
+    try {
+      await addDocument({
+        name: name.trim(),
+        category,
+        description: description.trim() || undefined,
+        file,
+      });
+      setName('');
+      setCategory('Policy');
+      setDescription('');
+      setFile(null);
+      setShowModal(false);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'The document could not be uploaded.');
+    }
+  }
+
+  async function handleOpen(document: (typeof documents)[number]) {
+    try {
+      const signedUrl = await openDocument(document);
+      if (signedUrl) {
+        window.open(signedUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'The document could not be opened right now.');
+    }
+  }
+
+  async function handleRemove(documentId: string) {
+    const ok = await removeDocument(documentId);
+    if (ok) {
+      setSelectedDocumentId((current) => (current === documentId ? null : current));
+    }
   }
 
   function handleCancel() {
@@ -76,6 +120,7 @@ export default function DocumentsPage() {
     setCategory('Policy');
     setDescription('');
     setFile(null);
+    setUploadError(null);
     setShowModal(false);
   }
 
@@ -111,7 +156,17 @@ export default function DocumentsPage() {
 
       <div className={`mt-5 grid gap-6 ${canManage ? 'lg:grid-cols-[1fr_320px]' : ''}`}>
         <div className="border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="space-y-3 px-5 py-5">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-16 animate-pulse rounded-md" style={{ background: 'rgba(15, 23, 42, 0.06)' }} />
+              ))}
+            </div>
+          ) : error ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-medium" style={{ color: 'var(--status-absent)' }}>{error}</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
               No documents in this category.
             </p>
@@ -119,27 +174,30 @@ export default function DocumentsPage() {
             filtered.map((d) => (
               <div
                 key={d.id}
-                onClick={() => setSelectedDocumentId(d.id)}
+                onClick={async () => {
+                  setSelectedDocumentId(d.id);
+                  await handleOpen(d);
+                }}
                 className="flex cursor-pointer items-start gap-4 border-b px-5 py-3.5 transition-colors hover:bg-[var(--paper)] last:border-b-0"
                 style={{ borderColor: 'var(--line-soft)' }}
               >
-                <span className="h-8 w-[3px] shrink-0 mt-1" style={{ background: 'var(--accent-holiday)' }} />
+                <span className="mt-1 h-8 w-[3px] shrink-0" style={{ background: 'var(--accent-holiday)' }} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium" style={{ color: 'var(--ink)' }}>
                     {d.name}
                   </p>
                   {d.description && (
-                    <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                    <p className="mt-1 line-clamp-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
                       {d.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <p>{d.uploaded_at}</p>
                     {d.file && <p>•</p>}
                     {d.file && <p>{d.file.name}</p>}
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex shrink-0 items-center gap-3">
                   <span
                     className="font-mono px-2 py-0.5 text-[11px] uppercase"
                     style={{ background: 'var(--accent-holiday-bg)', color: 'var(--accent-holiday)', borderRadius: 'var(--radius-sm)' }}
@@ -150,7 +208,7 @@ export default function DocumentsPage() {
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
-                        removeDocument(d.id);
+                        void handleRemove(d.id);
                       }}
                       className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                       style={{ color: 'var(--status-absent)' }}
@@ -210,13 +268,19 @@ export default function DocumentsPage() {
                 {selectedDocument.file && <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{selectedDocument.file.type || 'Unknown type'} · {(selectedDocument.file.size / 1024).toFixed(2)} KB</p>}
               </div>
             </div>
+            <button
+              onClick={() => void handleOpen(selectedDocument)}
+              className="w-full py-2.5 text-sm font-medium"
+              style={{ background: 'var(--ink)', color: 'white', borderRadius: 'var(--radius-sm)' }}
+            >
+              Open / Download
+            </button>
           </div>
         )}
       </Drawer>
 
-      {/* Add Document Modal */}
       {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-4 z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div
             className="w-full max-w-md border bg-white p-6"
             style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}
@@ -228,15 +292,13 @@ export default function DocumentsPage() {
               Upload a new HR document
             </p>
 
-            <form onSubmit={handleAdd} className="mt-6 space-y-4">
-              {/* File Upload */}
+            <form onSubmit={(event) => void handleAdd(event)} className="mt-6 space-y-4">
               <label className="block">
                 <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
                   Document file
                 </span>
                 <div
-                  className={`mt-2 border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${dragActive ? 'bg-blue-50' : 'bg-gray-50'
-                    }`}
+                  className={`mt-2 cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${dragActive ? 'bg-blue-50' : 'bg-gray-50'}`}
                   style={{
                     borderColor: dragActive ? 'var(--accent-holiday)' : 'var(--line-soft)',
                     backgroundColor: dragActive ? 'rgba(244, 144, 12, 0.05)' : 'rgba(0, 0, 0, 0.02)',
@@ -253,13 +315,13 @@ export default function DocumentsPage() {
                     accept=".pdf,.docx,.xlsx"
                     className="hidden"
                   />
-                  <label htmlFor="file-input" className="cursor-pointer block">
+                  <label htmlFor="file-input" className="block cursor-pointer">
                     {file ? (
                       <div>
                         <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
                           ✓ {file.name}
                         </p>
-                        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                           {(file.size / 1024).toFixed(2)} KB
                         </p>
                       </div>
@@ -268,10 +330,10 @@ export default function DocumentsPage() {
                         <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
                           ↑
                         </p>
-                        <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>
+                        <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                           Drag & drop your file
                         </p>
-                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                           PDF, DOCX, XLSX
                         </p>
                       </div>
@@ -280,7 +342,10 @@ export default function DocumentsPage() {
                 </div>
               </label>
 
-              {/* Document Name */}
+              {uploadError && (
+                <p className="text-sm" style={{ color: 'var(--status-absent)' }}>{uploadError}</p>
+              )}
+
               <label className="block">
                 <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
                   Document name
@@ -296,7 +361,6 @@ export default function DocumentsPage() {
                 />
               </label>
 
-              {/* Category */}
               <label className="block">
                 <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
                   Category
@@ -315,7 +379,6 @@ export default function DocumentsPage() {
                 </select>
               </label>
 
-              {/* Description */}
               <label className="block">
                 <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
                   Description
@@ -324,25 +387,24 @@ export default function DocumentsPage() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Optional description"
-                  className="mt-1.5 w-full border px-3 py-2 text-sm outline-none resize-none"
+                  className="mt-1.5 w-full resize-none border px-3 py-2 text-sm outline-none"
                   rows={3}
                   style={inputStyle}
                 />
               </label>
 
-              {/* Buttons */}
-              <div className="mt-6 flex gap-3 pt-4 border-t" style={{ borderColor: 'var(--line-soft)' }}>
+              <div className="mt-6 flex gap-3 border-t pt-4" style={{ borderColor: 'var(--line-soft)' }}>
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="flex-1 py-2.5 text-sm font-medium border transition-colors hover:bg-gray-50"
+                  className="flex-1 border py-2.5 text-sm font-medium transition-colors hover:bg-gray-50"
                   style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)', color: 'var(--ink)' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!name.trim()}
+                  disabled={!name.trim() || !file}
                   className="flex-1 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{
                     background: 'var(--accent-holiday)',
