@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorkMode } from './employees';
+import { supabase } from '../lib/supabase';
 
 export const STANDARD_HOURS_PER_DAY = 9;
 export const STANDARD_SHIFT_END = '18:00';
@@ -12,6 +13,10 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   check_in: string | null; // HH:MM
   check_out: string | null; // HH:MM
+  check_in_at: string | null;
+  check_out_at: string | null;
+  original_check_in: string | null;
+  original_check_out: string | null;
   latitude: number | null;
   longitude: number | null;
   work_mode: WorkMode;
@@ -24,6 +29,15 @@ export interface AttendanceRecord {
   overtime_reason: string | null;
   overtime_approval_status: OvertimeApprovalStatus | null;
   overtime_approved_by: string | null;
+  manual_approval_status: 'approved' | 'pending' | 'rejected';
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+  work_done_today: string | null;
+  is_overtime: boolean;
+  updated_at: string | null;
+  created_at: string | null;
   mats: string | null;
 }
 
@@ -37,80 +51,6 @@ export interface AttendanceAuditEntry {
   updated_check_in: string | null;
   updated_check_out: string | null;
   reason: string;
-}
-
-const STORAGE_KEY = 'roster.attendance';
-const AUDIT_STORAGE_KEY = 'roster.attendance.audit';
-
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-const SEED_ATTENDANCE: Partial<AttendanceRecord>[] = [
-  { id: 'a1', employee_id: 'e12', date: daysAgo(3), check_in: '09:08', check_out: '18:02', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a2', employee_id: 'e12', date: daysAgo(2), check_in: '09:14', check_out: '17:55', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a3', employee_id: 'e12', date: daysAgo(1), check_in: '09:02', check_out: '18:10', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a4', employee_id: 'e6', date: daysAgo(3), check_in: '09:30', check_out: '18:20', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
-  { id: 'a5', employee_id: 'e6', date: daysAgo(2), check_in: '09:25', check_out: '18:05', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a6', employee_id: 'e6', date: daysAgo(1), check_in: '09:40', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a7', employee_id: 'e3', date: daysAgo(3), check_in: '09:12', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a8', employee_id: 'e3', date: daysAgo(2), check_in: '09:00', check_out: '17:30', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a9', employee_id: 'e3', date: daysAgo(1), check_in: '09:20', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'a10', employee_id: 'e3', date: daysAgo(6), check_in: '09:05', check_out: '11:25', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a11', employee_id: 'e3', date: daysAgo(6), check_in: '12:30', check_out: '18:15', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'a12', employee_id: 'e2', date: daysAgo(2), check_in: '09:10', check_out: '17:50', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
-  { id: 'a13', employee_id: 'e7', date: daysAgo(1), check_in: '09:15', check_out: '18:05', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT' },
-];
-
-const TODAY_SAMPLE_ATTENDANCE: Partial<AttendanceRecord>[] = [
-  { id: 'today-e1', employee_id: 'e1', date: daysAgo(0), check_in: '09:02', check_out: '18:04', latitude: 30.901, longitude: 75.857, work_mode: 'OFFICE', status: 'PRESENT' },
-  { id: 'today-e2', employee_id: 'e2', date: daysAgo(0), check_in: '09:25', check_out: '17:40', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
-  { id: 'today-e3', employee_id: 'e3', date: daysAgo(0), check_in: '09:12', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'today-e5', employee_id: 'e5', date: daysAgo(0), check_in: null, check_out: null, latitude: null, longitude: null, work_mode: 'WFH', status: 'ABSENT' },
-  { id: 'today-e7', employee_id: 'e7', date: daysAgo(0), check_in: '08:58', check_out: '17:32', latitude: null, longitude: null, work_mode: 'OFFICE', status: 'PRESENT', is_manual_entry: true, manual_entry_reason: 'Biometric scanner was unavailable at the entrance' },
-  { id: 'today-e9', employee_id: 'e9', date: daysAgo(0), check_in: '09:06', check_out: '18:01', latitude: null, longitude: null, work_mode: 'HYBRID', status: 'PRESENT' },
-];
-
-const EMPLOYEE_MONTH_SAMPLE_ATTENDANCE: Partial<AttendanceRecord>[] = [
-  { id: 'aug-e3-01', employee_id: 'e3', date: '2026-08-03', check_in: '09:06', check_out: '18:02', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-02', employee_id: 'e3', date: '2026-08-04', check_in: '09:18', check_out: '17:55', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-03', employee_id: 'e3', date: '2026-08-05', check_in: '08:58', check_out: '18:10', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-04', employee_id: 'e3', date: '2026-08-06', check_in: '09:11', check_out: '18:00', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-05', employee_id: 'e3', date: '2026-08-07', check_in: '09:03', check_out: '17:48', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-06', employee_id: 'e3', date: '2026-08-10', check_in: '09:14', check_out: '18:06', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-07', employee_id: 'e3', date: '2026-08-11', check_in: '09:00', check_out: '17:40', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-08', employee_id: 'e3', date: '2026-08-12', check_in: '09:09', check_out: '18:12', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-09', employee_id: 'e3', date: '2026-08-13', check_in: '09:21', check_out: '17:52', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-10', employee_id: 'e3', date: '2026-08-14', check_in: '09:05', check_out: '18:04', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-11', employee_id: 'e3', date: '2026-08-17', check_in: '09:08', check_out: '17:58', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-12', employee_id: 'e3', date: '2026-08-18', check_in: '09:16', check_out: '18:01', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-13', employee_id: 'e3', date: '2026-08-19', check_in: '09:02', check_out: '17:46', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-14', employee_id: 'e3', date: '2026-08-20', check_in: '09:12', check_out: '18:08', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-  { id: 'aug-e3-15', employee_id: 'e3', date: '2026-08-21', check_in: '09:07', check_out: '17:54', latitude: null, longitude: null, work_mode: 'WFH', status: 'PRESENT' },
-];
-
-function load(): AttendanceRecord[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const seeded = [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE, ...EMPLOYEE_MONTH_SAMPLE_ATTENDANCE].map(normalizeRecord);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-    const stored = JSON.parse(raw) as Partial<AttendanceRecord>[];
-    const today = daysAgo(0);
-    const todayRecords = stored.filter((record) => record.date === today);
-    const missingSamples = TODAY_SAMPLE_ATTENDANCE.filter((sample) => {
-      const employeeRecords = todayRecords.filter((record) => record.employee_id === sample.employee_id);
-      return sample.check_in ? !employeeRecords.some((record) => record.check_in) : employeeRecords.length === 0;
-    });
-    const missingEmployeeMonthSamples = EMPLOYEE_MONTH_SAMPLE_ATTENDANCE.filter((sample) => !stored.some((record) => record.id === sample.id));
-    return [...stored, ...missingSamples, ...missingEmployeeMonthSamples].map(normalizeRecord);
-  } catch {
-    return [...SEED_ATTENDANCE, ...TODAY_SAMPLE_ATTENDANCE, ...EMPLOYEE_MONTH_SAMPLE_ATTENDANCE].map(normalizeRecord);
-  }
 }
 
 function minutesFromTime(time: string | null): number | null {
@@ -132,6 +72,10 @@ function normalizeRecord(record: Partial<AttendanceRecord>): AttendanceRecord {
     date: record.date ?? today(),
     check_in: record.check_in ?? null,
     check_out: record.check_out ?? null,
+    check_in_at: record.check_in_at ?? null,
+    check_out_at: record.check_out_at ?? null,
+    original_check_in: record.original_check_in ?? record.check_in ?? null,
+    original_check_out: record.original_check_out ?? record.check_out ?? null,
     latitude: record.latitude ?? null,
     longitude: record.longitude ?? null,
     work_mode: record.work_mode ?? 'OFFICE',
@@ -144,6 +88,15 @@ function normalizeRecord(record: Partial<AttendanceRecord>): AttendanceRecord {
     overtime_reason: record.overtime_reason ?? null,
     overtime_approval_status: record.overtime_approval_status ?? (overtime > 0 ? 'pending' : null),
     overtime_approved_by: record.overtime_approved_by ?? null,
+    manual_approval_status: record.manual_approval_status ?? (record.is_manual_entry ? 'pending' : 'approved'),
+    approved_by: record.approved_by ?? null,
+    approved_at: record.approved_at ?? null,
+    rejected_by: record.rejected_by ?? null,
+    rejected_at: record.rejected_at ?? null,
+    work_done_today: record.work_done_today ?? null,
+    is_overtime: record.is_overtime ?? overtime > 0,
+    updated_at: record.updated_at ?? null,
+    created_at: record.created_at ?? null,
     mats: record.mats ?? null,
   };
 }
@@ -166,20 +119,19 @@ function deriveMetadata(checkIn: string | null, checkOut: string | null, overrid
   };
 }
 
-function loadAudit(): AttendanceAuditEntry[] {
-  try {
-    return JSON.parse(localStorage.getItem(AUDIT_STORAGE_KEY) ?? '[]') as AttendanceAuditEntry[];
-  } catch {
-    return [];
-  }
-}
-
 function nowHM(): string {
   return new Date().toTimeString().slice(0, 5);
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDate(new Date());
+}
+
+function localDate(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export function hoursBetween(checkIn: string | null, checkOut: string | null): number | null {
@@ -249,79 +201,103 @@ export function hasOpenSession(records: AttendanceRecord[], employeeId: string, 
 }
 
 export function useAttendance() {
-  const [records, setRecords] = useState<AttendanceRecord[]>(() => load());
-  const [audit, setAudit] = useState<AttendanceAuditEntry[]>(() => loadAudit());
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [audit, setAudit] = useState<AttendanceAuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  }, [records]);
-
-  useEffect(() => {
-    localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(audit));
-  }, [audit]);
-
-  const checkIn = useCallback(
-    (employeeId: string, workMode: WorkMode, coords: { latitude: number; longitude: number } | null) => {
-      setRecords((prev) => {
-        const date = today();
-        const active = prev.find(
-          (r) => r.employee_id === employeeId && r.date === date && r.check_in && !r.check_out,
-        );
-        if (active) return prev;
-
-        const rec: AttendanceRecord = {
-          id: crypto.randomUUID(),
-          employee_id: employeeId,
-          date,
-          check_in: nowHM(),
-          check_out: null,
-          latitude: coords?.latitude ?? null,
-          longitude: coords?.longitude ?? null,
-          work_mode: workMode,
-          status: 'PRESENT',
-          is_manual_entry: false,
-          manual_entry_reason: null,
-          is_early_checkout: false,
-          early_checkout_reason: null,
-          overtime_minutes: 0,
-          overtime_reason: null,
-          overtime_approval_status: null,
-          overtime_approved_by: null,
-          mats: null,
-        };
-        return [rec, ...prev];
-      });
-    },
-    [],
-  );
-
-  const checkOut = useCallback((employeeId: string) => {
-    setRecords((prev) => {
-      const todayDate = today();
-      const open = [...prev]
-        .filter((r) => r.employee_id === employeeId && r.date === todayDate && r.check_in && !r.check_out)
-        .sort((a, b) => (a.check_in ?? '').localeCompare(b.check_in ?? ''))
-        .at(-1);
-
-      if (!open) return prev;
-      return prev.map((r) => (r.id === open.id ? { ...r, check_out: nowHM(), status: 'PRESENT' } : r));
-    });
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const [attendanceResult, auditResult] = await Promise.all([
+      supabase.from('attendance').select('*').order('date', { ascending: false }).order('check_in', { ascending: false }),
+      supabase.from('attendance_audit').select('*').order('created_at', { ascending: false }),
+    ]);
+    const fetchError = attendanceResult.error ?? auditResult.error;
+    if (fetchError) {
+      setError(fetchError.message);
+    } else {
+      setError(null);
+      setRecords((attendanceResult.data ?? []).map((row) => normalizeRecord(row as Partial<AttendanceRecord>)));
+      setAudit((auditResult.data ?? []) as AttendanceAuditEntry[]);
+    }
+    setLoading(false);
   }, []);
 
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const checkIn = useCallback(
+    (employeeId: string, workMode: WorkMode, coords: { latitude: number; longitude: number } | null, isOvertime = false) => {
+      const date = today();
+      if (hasOpenSession(records, employeeId, date)) return false;
+      void (async () => {
+        const { data, error: insertError } = await supabase.from('attendance').insert({
+          employee_id: employeeId, date, check_in: nowHM(), check_out: null,
+          check_in_at: new Date().toISOString(),
+          latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
+          work_mode: workMode, status: 'PRESENT', is_overtime: isOvertime, overtime_approval_status: isOvertime ? 'pending' : null, mats: new Date().toISOString(),
+        }).select('*').single();
+        if (insertError) { setError(insertError.message); return; }
+        setError(null);
+        setRecords((prev) => [normalizeRecord(data as Partial<AttendanceRecord>), ...prev]);
+      })();
+      return true;
+    },
+    [records],
+  );
+
+  const checkOut = useCallback((employeeId: string, workDoneToday = '') => {
+    const open = [...records]
+      .filter((r) => r.employee_id === employeeId && r.date === today() && r.check_in && !r.check_out)
+      .sort((a, b) => (a.check_in ?? '').localeCompare(b.check_in ?? ''))
+      .at(-1);
+    if (!open) return false;
+    void (async () => {
+      const { data, error: updateError } = await supabase.from('attendance').update({
+        check_out: nowHM(), check_out_at: new Date().toISOString(), status: 'PRESENT',
+        work_done_today: workDoneToday.trim() || null, mats: new Date().toISOString(),
+      }).eq('id', open.id).select('*').single();
+      if (updateError) { setError(updateError.message); return; }
+      setError(null);
+      setRecords((prev) => prev.map((record) => record.id === open.id ? normalizeRecord(data as Partial<AttendanceRecord>) : record));
+    })();
+    return true;
+  }, [records]);
+
   const addManualEntry = useCallback(
-    (employeeId: string, draft: { date: string; check_in: string; check_out: string; work_mode: WorkMode; manual_entry_reason: string; early_checkout_reason?: string; overtime_reason?: string }) => {
+    (employeeId: string, draft: { date: string; check_in: string; check_out: string; work_mode: WorkMode; manual_entry_reason: string; early_checkout_reason?: string; overtime_reason?: string; is_overtime?: boolean; work_done_today?: string }) => {
+      if (draft.date > today()) return false;
       const metadata = deriveMetadata(draft.check_in, draft.check_out);
       const record = normalizeRecord({
-        id: crypto.randomUUID(), employee_id: employeeId, date: draft.date, check_in: draft.check_in, check_out: draft.check_out,
+        employee_id: employeeId, date: draft.date, check_in: draft.check_in, check_out: draft.check_out,
         latitude: null, longitude: null, work_mode: draft.work_mode, status: 'PRESENT', is_manual_entry: true,
         manual_entry_reason: draft.manual_entry_reason, early_checkout_reason: draft.early_checkout_reason ?? null,
         overtime_reason: draft.overtime_reason ?? null, ...metadata,
       });
+      if (draft.is_overtime && record.check_in && record.check_out) {
+        record.is_overtime = true;
+        record.overtime_minutes = Math.max(0, (minutesFromTime(record.check_out) ?? 0) - (minutesFromTime(record.check_in) ?? 0));
+        record.overtime_approval_status = 'pending';
+      }
       if (!validateRecord(record)) return false;
-      setRecords((prev) => [
-        record,
-        ...prev,
-      ]);
+      void (async () => {
+        const { data, error: insertError } = await supabase.from('attendance').insert({
+          employee_id: record.employee_id, date: record.date, check_in: record.check_in, check_out: record.check_out,
+          check_in_at: new Date(`${record.date}T${record.check_in}:00`).toISOString(),
+          check_out_at: new Date(`${record.date}T${record.check_out}:00`).toISOString(),
+          original_check_in: record.check_in, original_check_out: record.check_out,
+          latitude: record.latitude, longitude: record.longitude, work_mode: record.work_mode, status: record.status,
+          is_manual_entry: record.is_manual_entry, manual_entry_reason: record.manual_entry_reason,
+          is_early_checkout: record.is_early_checkout, early_checkout_reason: record.early_checkout_reason,
+          overtime_minutes: record.overtime_minutes, overtime_reason: record.overtime_reason,
+          overtime_approval_status: record.overtime_approval_status, overtime_approved_by: record.overtime_approved_by,
+          manual_approval_status: 'pending', is_overtime: draft.is_overtime ?? record.overtime_minutes > 0,
+          work_done_today: draft.work_done_today ?? null,
+          mats: new Date().toISOString(),
+        }).select('*').single();
+        if (insertError) { setError(insertError.message); return; }
+        setError(null);
+        setRecords((prev) => [normalizeRecord(data as Partial<AttendanceRecord>), ...prev]);
+      })();
       return true;
     },
     [],
@@ -330,35 +306,62 @@ export function useAttendance() {
   const updateAttendanceRecord = useCallback(
     (recordId: string, changes: Pick<AttendanceRecord, 'check_in' | 'check_out' | 'work_mode'> & Partial<Pick<AttendanceRecord, 'early_checkout_reason' | 'overtime_reason' | 'overtime_approval_status'>>, reason: string) => {
       if (!reason.trim()) return false;
-      let previous: AttendanceRecord | null = null;
-      setRecords((prev) => {
-        previous = prev.find((record) => record.id === recordId) ?? null;
-        if (!previous) return prev;
-        return prev.map((record) => {
-          if (record.id !== recordId) return record;
-          const next = normalizeRecord({ ...record, ...changes, ...deriveMetadata(changes.check_in, changes.check_out, changes), is_manual_entry: true, manual_entry_reason: reason.trim() });
-          return validateRecord(next) ? next : record;
-        });
-      });
+      const previous = records.find((record) => record.id === recordId) ?? null;
       if (!previous) return false;
-      setAudit((prev) => [
-        {
-          id: crypto.randomUUID(),
-          record_id: recordId,
-          changed_by: 'Super Admin',
-          changed_on: new Date().toISOString().slice(0, 10),
-          previous_check_in: previous!.check_in,
-          previous_check_out: previous!.check_out,
-          updated_check_in: changes.check_in,
-          updated_check_out: changes.check_out,
-          reason: reason.trim(),
-        },
-        ...prev,
-      ]);
+      const next = normalizeRecord({ ...previous, ...changes, ...deriveMetadata(changes.check_in, changes.check_out, changes), is_manual_entry: true, manual_entry_reason: reason.trim() });
+      if (!validateRecord(next)) return false;
+      void (async () => {
+        const { data, error: updateError } = await supabase.from('attendance').update({
+          check_in: next.check_in, check_out: next.check_out, work_mode: next.work_mode,
+          check_in_at: next.check_in ? new Date(`${next.date}T${next.check_in}:00`).toISOString() : null,
+          check_out_at: next.check_out ? new Date(`${next.date}T${next.check_out}:00`).toISOString() : null,
+          original_check_in: previous.original_check_in ?? previous.check_in,
+          original_check_out: previous.original_check_out ?? previous.check_out,
+          is_manual_entry: true, manual_entry_reason: next.manual_entry_reason,
+          is_early_checkout: next.is_early_checkout, early_checkout_reason: next.early_checkout_reason,
+          overtime_minutes: next.overtime_minutes, overtime_reason: next.overtime_reason,
+          overtime_approval_status: next.overtime_approval_status, is_overtime: next.overtime_minutes > 0,
+          manual_approval_status: 'pending', mats: new Date().toISOString(),
+        }).eq('id', recordId).select('*').single();
+        if (updateError) { setError(updateError.message); return; }
+        const { data: auditData, error: auditError } = await supabase.from('attendance_audit').insert({
+          record_id: recordId, changed_by: 'Authenticated user',
+          previous_check_in: previous.check_in, previous_check_out: previous.check_out,
+          updated_check_in: next.check_in, updated_check_out: next.check_out, reason: reason.trim(),
+        }).select('*').single();
+        if (auditError) { setError(auditError.message); return; }
+        setError(null);
+        setRecords((prev) => prev.map((record) => record.id === recordId ? normalizeRecord(data as Partial<AttendanceRecord>) : record));
+        setAudit((prev) => [auditData as AttendanceAuditEntry, ...prev]);
+      })();
       return true;
     },
-    [],
+    [records],
   );
 
-  return { records, checkIn, checkOut, addManualEntry, updateAttendanceRecord, audit, today: today() };
+  const updateApproval = useCallback((recordId: string, status: 'approved' | 'rejected') => {
+    void (async () => {
+      const { data: approverId, error: approverError } = await supabase.rpc('current_employee_id');
+      if (approverError) { setError(approverError.message); return; }
+      const { data, error: updateError } = await supabase.from('attendance').update({
+        overtime_approval_status: status,
+        overtime_approved_by: status === 'approved' ? approverId : null,
+        manual_approval_status: status,
+        approved_by: status === 'approved' ? approverId : null,
+        approved_at: status === 'approved' ? new Date().toISOString() : null,
+        rejected_by: status === 'rejected' ? approverId : null,
+        rejected_at: status === 'rejected' ? new Date().toISOString() : null,
+        mats: new Date().toISOString(),
+      }).eq('id', recordId).select('*').single();
+      if (updateError) { setError(updateError.message); return; }
+      setError(null);
+      setRecords((prev) => prev.map((record) => record.id === recordId ? normalizeRecord(data as Partial<AttendanceRecord>) : record));
+    })();
+    return true;
+  }, []);
+
+  const approveRecord = useCallback((recordId: string) => updateApproval(recordId, 'approved'), [updateApproval]);
+  const rejectRecord = useCallback((recordId: string) => updateApproval(recordId, 'rejected'), [updateApproval]);
+
+  return { records, checkIn, checkOut, addManualEntry, updateAttendanceRecord, approveRecord, rejectRecord, audit, today: today(), loading, error };
 }

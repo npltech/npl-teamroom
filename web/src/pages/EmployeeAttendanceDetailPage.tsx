@@ -49,7 +49,7 @@ export default function EmployeeAttendanceDetailPage() {
     const params = useParams();
     const [searchParams] = useSearchParams();
     const { employees } = useEmployees();
-    const { records, addManualEntry, updateAttendanceRecord, audit, today } = useAttendance();
+    const { records, addManualEntry, updateAttendanceRecord, approveRecord, rejectRecord, audit, today, loading, error } = useAttendance();
     const { holidays } = useHolidays();
     const { requests: leaveRequests } = useLeaveRequests();
 
@@ -71,6 +71,7 @@ export default function EmployeeAttendanceDetailPage() {
     const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState({ check_in: '09:00', check_out: '18:00', work_mode: 'OFFICE' as WorkMode, reason: '', early_checkout_reason: '', overtime_reason: '' });
     const [historyVisible, setHistoryVisible] = useState(false);
+    const [workDoneToday, setWorkDoneToday] = useState('');
 
     const sessionsByDay = useMemo(() => {
         if (!employee) return [] as Array<{ date: string; sessions: AttendanceRecord[]; total: number }>;
@@ -139,8 +140,13 @@ export default function EmployeeAttendanceDetailPage() {
             manual_entry_reason: manualForm.manual_entry_reason,
             early_checkout_reason: manualForm.early_checkout_reason,
             overtime_reason: manualForm.overtime_reason,
+            is_overtime: holidays.some((holiday) => holiday.date === manualForm.date),
+            work_done_today: workDoneToday,
         });
-        if (saved) setManualMode(false);
+        if (saved) {
+            setManualMode(false);
+            setWorkDoneToday('');
+        }
     }
 
     if (!employee) {
@@ -160,6 +166,8 @@ export default function EmployeeAttendanceDetailPage() {
             </div>
         );
     }
+
+    if (loading) return <div className="p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading attendance…</div>;
 
     function openEdit(record: AttendanceRecord) {
         setEditingRecordId(record.id);
@@ -184,6 +192,7 @@ export default function EmployeeAttendanceDetailPage() {
         const statusColor = selectedStatus === 'PRESENT' ? 'var(--status-present)' : selectedStatus === 'LEAVE' ? '#F59E0B' : selectedStatus === 'HOLIDAY' ? '#8B5CF6' : selectedStatus === 'ABSENT' ? 'var(--status-absent)' : 'var(--text-muted)';
         return (
             <div className="mx-auto max-w-6xl space-y-6">
+                {error && <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <button onClick={() => navigate(`/attendance?month=${month}&year=${year}`)} className="font-mono text-[11px] uppercase tracking-wide hover:underline" style={{ color: 'var(--accent-holiday)' }}>← Back to Employee Attendance</button>
                     {canManage && <button onClick={() => { setManualForm((prev) => ({ ...prev, date: selectedSuperDay?.date ?? today })); setManualMode((prev) => !prev); }} className="border px-3 py-2 text-xs font-medium" style={{ borderColor: 'var(--line)', color: 'var(--ink)', borderRadius: 'var(--radius-sm)' }}>{manualMode ? 'Close form' : 'Add attendance'}</button>}
@@ -198,6 +207,7 @@ export default function EmployeeAttendanceDetailPage() {
 
                 {canManage && manualMode && <form onSubmit={(event) => { event.preventDefault(); if (!manualForm.date || !manualForm.check_in || !manualForm.check_out || !manualForm.manual_entry_reason.trim()) return; const saved = addManualEntry(employee.id, manualForm); if (saved) { setManualMode(false); setSelectedDate(manualForm.date); } }} className="grid gap-3 border bg-white p-4 md:grid-cols-3" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}><input type="date" value={manualForm.date} onChange={(e) => setManualForm((prev) => ({ ...prev, date: e.target.value }))} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><input type="time" value={manualForm.check_in} onChange={(e) => setManualForm((prev) => ({ ...prev, check_in: e.target.value }))} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><input type="time" value={manualForm.check_out} onChange={(e) => setManualForm((prev) => ({ ...prev, check_out: e.target.value }))} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><select value={manualForm.work_mode} onChange={(e) => setManualForm((prev) => ({ ...prev, work_mode: e.target.value as WorkMode }))} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}>{WORK_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select><input required value={manualForm.manual_entry_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, manual_entry_reason: e.target.value }))} placeholder="Reason for manual entry" className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><input value={manualForm.early_checkout_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, early_checkout_reason: e.target.value }))} placeholder={`Early checkout reason (before ${STANDARD_SHIFT_END})`} className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><input value={manualForm.overtime_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, overtime_reason: e.target.value }))} placeholder="Overtime reason (if applicable)" className="border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} /><button type="submit" className="px-3 py-2 text-sm font-medium" style={{ background: 'var(--accent-holiday)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Add attendance</button></form>}
 
+                {(role === 'HR' || role === 'SUPER_ADMIN') && selectedSuperDay?.sessions.some((session) => session.manual_approval_status === 'pending' || session.overtime_approval_status === 'pending') && <div className="border border-amber-300 bg-amber-50 p-4 text-sm"><p className="font-semibold text-amber-900">Attendance requests</p><div className="mt-2 space-y-2">{selectedSuperDay.sessions.filter((session) => session.manual_approval_status === 'pending' || session.overtime_approval_status === 'pending').map((session) => <div key={session.id} className="flex flex-wrap items-center justify-between gap-2"><span className="text-amber-900">{formatTime(session.original_check_in)} → {formatTime(session.original_check_out)} → {formatTime(session.check_in)} → {formatTime(session.check_out)} · {session.manual_entry_reason ?? session.overtime_reason ?? 'Approval required'} · {session.manual_approval_status} · {session.created_at ? new Date(session.created_at).toLocaleString() : 'Created date unavailable'}</span><span className="flex gap-2"><button onClick={() => approveRecord(session.id)} className="px-2 py-1 text-xs" style={{ background: 'var(--status-present)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Approve</button><button onClick={() => rejectRecord(session.id)} className="border px-2 py-1 text-xs" style={{ borderColor: '#FCA5A5', color: '#B91C1C', borderRadius: 'var(--radius-sm)' }}>Reject</button></span></div>)}</div></div>}
                 <div className="grid gap-5 xl:grid-cols-[1.55fr_0.85fr]">
                     <div className="overflow-hidden border bg-white shadow-sm" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
                         <div className="border-b px-5 py-3.5" style={{ borderColor: 'var(--line-soft)' }}><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Monthly attendance</h2></div>
@@ -331,6 +341,7 @@ export default function EmployeeAttendanceDetailPage() {
                             <option key={mode} value={mode}>{mode}</option>
                         ))}
                     </select>
+                    <input value={workDoneToday} onChange={(e) => setWorkDoneToday(e.target.value)} placeholder="What did you work on today?" className="border px-3 py-2 text-sm md:col-span-2" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />
                     <button type="submit" className="px-3 py-2 text-sm font-medium" style={{ background: 'var(--accent-holiday)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>
                         Save entry
                     </button>

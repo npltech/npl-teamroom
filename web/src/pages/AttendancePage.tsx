@@ -60,7 +60,7 @@ export default function AttendancePage() {
   const { departments } = useDepartments();
   const { holidays } = useHolidays();
   const { requests: leaveRequests } = useLeaveRequests();
-  const { records, checkIn, checkOut, addManualEntry, today } = useAttendance();
+  const { records, checkIn, checkOut, addManualEntry, today, loading, error } = useAttendance();
 
   const isHRAdmin = role === 'HR' || role === 'SUPER_ADMIN';
   const [viewMode, setViewMode] = useState<'my' | 'employee'>('my');
@@ -70,6 +70,7 @@ export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [workMode, setWorkMode] = useState<WorkMode>(employee?.work_mode ?? 'OFFICE');
   const [location, setLocation] = useState<LocationState>({ status: 'idle' });
+  const [workDoneToday, setWorkDoneToday] = useState('');
   const [manualMode, setManualMode] = useState(false);
   const [manualForm, setManualForm] = useState({
     date: today,
@@ -177,7 +178,7 @@ export default function AttendancePage() {
   function handleCheckIn() {
     if (!targetEmployee) return;
     if (!('geolocation' in navigator)) {
-      checkIn(targetEmployee.id, workMode, null);
+      checkIn(targetEmployee.id, workMode, null, holidays.some((holiday) => holiday.date === today));
       return;
     }
 
@@ -186,11 +187,11 @@ export default function AttendancePage() {
       (pos) => {
         const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         setLocation({ status: 'done', coords });
-        checkIn(targetEmployee.id, workMode, coords);
+        checkIn(targetEmployee.id, workMode, coords, holidays.some((holiday) => holiday.date === today));
       },
       () => {
         setLocation({ status: 'done', coords: null });
-        checkIn(targetEmployee.id, workMode, null);
+        checkIn(targetEmployee.id, workMode, null, holidays.some((holiday) => holiday.date === today));
       },
       { timeout: 8000 },
     );
@@ -202,7 +203,7 @@ export default function AttendancePage() {
     if (!manualForm.date || !manualForm.check_in || !manualForm.check_out || !manualForm.manual_entry_reason.trim()) return;
     const overtimeMinutes = Math.max(0, Math.round((hoursBetween(manualForm.check_in, manualForm.check_out) ?? 0) * 60) - 9 * 60);
     if (manualForm.check_out < STANDARD_SHIFT_END && !manualForm.early_checkout_reason.trim()) return;
-    if (overtimeMinutes > 0 && !manualForm.overtime_reason.trim()) return;
+    if ((overtimeMinutes > 0 || holidays.some((holiday) => holiday.date === manualForm.date)) && !manualForm.overtime_reason.trim()) return;
     const saved = addManualEntry(targetEmployee.id, {
       date: manualForm.date,
       check_in: manualForm.check_in,
@@ -211,6 +212,8 @@ export default function AttendancePage() {
       manual_entry_reason: manualForm.manual_entry_reason,
       early_checkout_reason: manualForm.early_checkout_reason,
       overtime_reason: manualForm.overtime_reason,
+      is_overtime: holidays.some((holiday) => holiday.date === manualForm.date),
+      work_done_today: workDoneToday,
     });
     if (saved) {
       setManualMode(false);
@@ -380,6 +383,9 @@ export default function AttendancePage() {
 
   const titleEmployee = targetEmployee ?? currentEmployee;
 
+  if (loading) return <div className="p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading attendance…</div>;
+  if (error) return <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>;
+
   if (isSuperAdmin) {
     const metricCards = [
       ['Total Employees', organizationMetrics.totalEmployees, 'var(--ink)'],
@@ -504,6 +510,7 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+      {error && <div className="mb-4 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {showEmployeeList ? (
         <div className="mt-6 space-y-6">
           <div className="grid gap-4 md:grid-cols-4">
@@ -659,7 +666,7 @@ export default function AttendancePage() {
                   </div>
 
                   <button
-                    onClick={currentDayOpen ? () => checkOut(targetEmployee!.id) : handleCheckIn}
+                    onClick={currentDayOpen ? () => checkOut(targetEmployee!.id, workDoneToday) : handleCheckIn}
                     className="px-5 py-3 text-sm font-semibold shadow-sm"
                     style={{ background: currentDayOpen ? '#F87171' : '#34D399', color: '#0f172a', borderRadius: 'var(--radius-sm)' }}
                   >
@@ -668,6 +675,7 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="mt-5 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.18)' }}>
+                  {currentDayOpen && <input value={workDoneToday} onChange={(event) => setWorkDoneToday(event.target.value)} placeholder="What did you work on today?" className="mb-3 w-full border px-3 py-2 text-sm" style={{ borderColor: 'rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: 'var(--radius-sm)' }} />}
                   <div className="grid gap-3 md:grid-cols-3">
                     <div>
                       <p className="font-mono text-[10px] uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,0.7)' }}>Check-in</p>
@@ -762,7 +770,7 @@ export default function AttendancePage() {
                       const isSelected = selectedDate === day.iso;
                       const isToday = day.iso === today;
                       const statusColor = day.status === 'holiday' ? '#8B5CF6' : day.status === 'leave' ? '#F59E0B' : day.status === 'present' ? '#22C55E' : 'var(--status-absent)';
-                      const rowBackground = day.status === 'present' ? '#F0FDF4' : day.status === 'absent' ? '#FFF1F2' : day.status === 'holiday' ? '#F5F3FF' : '#FFFBEB';
+                      const rowBackground = day.sessions.some((session) => session.is_manual_entry) ? '#DC2626' : day.status === 'present' ? '#F0FDF4' : day.status === 'absent' ? '#FFF1F2' : day.status === 'holiday' ? '#F5F3FF' : '#FFFBEB';
                       const rowAccent = day.status === 'present' ? '#22C55E' : day.status === 'absent' ? '#EF4444' : statusColor;
                       const firstSession = day.sessions[0];
                       const lastSession = day.sessions[day.sessions.length - 1];
@@ -775,19 +783,19 @@ export default function AttendancePage() {
                           className="grid w-full grid-cols-[24%_17%_17%_14%_28%] items-center border-t px-4 py-3.5 text-left transition-colors hover:bg-[var(--paper)] sm:px-5"
                           style={{ borderColor: 'var(--line-soft)', background: rowBackground, borderLeft: isSelected || isToday ? `3px solid ${rowAccent}` : '3px solid transparent' }}
                         >
-                          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
+                          <span className="text-sm font-semibold" style={{ color: day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)' }}>
                             {new Date(`${day.iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}{isToday && <span className="ml-2 inline-flex border px-1.5 py-0.5 align-middle font-mono text-[9px] font-semibold tracking-wide" style={{ borderColor: '#60A5FA', color: '#2563EB', borderRadius: 'var(--radius-sm)' }}>TODAY</span>}
                           </span>
-                          <span className="font-mono text-xs" style={{ color: firstSession?.check_in ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                          <span className="font-mono text-xs" style={{ color: firstSession?.check_in ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--text-secondary)') : 'var(--text-muted)' }}>
                             {firstSession?.check_in ?? '—'}
                           </span>
-                          <span className="font-mono text-xs" style={{ color: lastSession?.check_out ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                          <span className="font-mono text-xs" style={{ color: lastSession?.check_out ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--text-secondary)') : 'var(--text-muted)' }}>
                             {lastSession?.check_out ?? '—'}
                           </span>
-                          <span className="text-right font-mono text-xs font-medium tabular-nums" style={{ color: day.total > 0 ? 'var(--ink)' : 'var(--text-muted)' }}>
+                          <span className="text-right font-mono text-xs font-medium tabular-nums" style={{ color: day.total > 0 ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)') : 'var(--text-muted)' }}>
                             {day.total > 0 ? `${day.total.toFixed(1)}h` : '—'}
                           </span>
-                          <span className="max-w-0 truncate text-xs" style={{ color: manualReason ? 'var(--ink)' : 'var(--text-muted)' }} title={manualReason ?? undefined}>
+                          <span className="max-w-0 truncate text-xs" style={{ color: manualReason ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)') : 'var(--text-muted)' }} title={manualReason ?? undefined}>
                             {manualReason ?? '—'}
                           </span>
                         </button>
@@ -910,8 +918,9 @@ export default function AttendancePage() {
                       className="w-full border px-3 py-2 text-sm"
                       style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }}
                     />
+                    <input value={workDoneToday} onChange={(e) => setWorkDoneToday(e.target.value)} placeholder="What did you work on today?" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />
                     {manualForm.check_out < STANDARD_SHIFT_END && <input required value={manualForm.early_checkout_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, early_checkout_reason: e.target.value }))} placeholder="Early checkout reason" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />}
-                    {(Math.max(0, Math.round((hoursBetween(manualForm.check_in, manualForm.check_out) ?? 0) * 60) - 9 * 60) > 0) && <input required value={manualForm.overtime_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, overtime_reason: e.target.value }))} placeholder="Overtime reason" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />}
+                    {(Math.max(0, Math.round((hoursBetween(manualForm.check_in, manualForm.check_out) ?? 0) * 60) - 9 * 60) > 0 || holidays.some((holiday) => holiday.date === manualForm.date)) && <input required value={manualForm.overtime_reason} onChange={(e) => setManualForm((prev) => ({ ...prev, overtime_reason: e.target.value }))} placeholder="Overtime reason" className="w-full border px-3 py-2 text-sm" style={{ borderColor: 'var(--line)', borderRadius: 'var(--radius-sm)' }} />}
                     <button type="submit" className="w-full px-3 py-2 text-sm font-medium" style={{ background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>
                       Save entry
                     </button>
