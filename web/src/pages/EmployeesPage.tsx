@@ -7,6 +7,7 @@ import { useEmployeeDocuments, type DocumentCategory } from '../data/employeeDoc
 import { createEmployeeAccount, useEmployeeAccounts } from '../lib/employeeAccounts';
 import { Drawer } from '../components/Drawer';
 import { StatusTag } from '../components/Ledger';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -104,6 +105,7 @@ export default function EmployeesPage() {
   }, [form.manager_id, managerCandidates]);
 
   const { documents, addDocument, removeDocument } = useEmployeeDocuments(editingId);
+  const [removeDocumentId, setRemoveDocumentId] = useState<string | null>(null);
   const [docName, setDocName] = useState('');
   const [docCategory, setDocCategory] = useState<DocumentCategory>('ID Proof');
   const DOC_CATEGORIES: DocumentCategory[] = ['ID Proof', 'Education', 'Bank Details', 'Certificate', 'Other'];
@@ -525,7 +527,7 @@ export default function EmployeesPage() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => removeDocument(d.id)}
+                        onClick={() => setRemoveDocumentId(d.id)}
                         style={{ color: 'var(--status-absent)' }}
                       >
                         ✕
@@ -634,6 +636,7 @@ export default function EmployeesPage() {
           </div>
         )}
       </Drawer>
+      <ConfirmDialog open={removeDocumentId !== null} message="Are you sure you want to remove this record?" onCancel={() => setRemoveDocumentId(null)} onConfirm={() => { if (removeDocumentId) removeDocument(removeDocumentId); setRemoveDocumentId(null); }} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { useHolidays } from '../data/holidays';
 import { useLeaveRequests } from '../data/leave';
 import type { Role } from '../data/roles';
 import { ChevronRight } from 'lucide-react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Ctx = { role: Role };
 
@@ -21,6 +22,8 @@ type LocationState =
   | { status: 'idle' }
   | { status: 'locating' }
   | { status: 'done'; coords: { latitude: number; longitude: number } | null };
+
+type ApprovalAction = { id: string; action: 'approve' | 'reject' } | null;
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORK_MODES: WorkMode[] = ['OFFICE', 'WFH', 'HYBRID'];
@@ -88,6 +91,7 @@ export default function AttendancePage() {
   const [managerFilter, setManagerFilter] = useState('ALL');
   const [organizationWorkMode, setOrganizationWorkMode] = useState<'ALL' | WorkMode>('ALL');
   const [superAdminSection, setSuperAdminSection] = useState<'overview' | 'employees'>('overview');
+  const [approvalAction, setApprovalAction] = useState<ApprovalAction>(null);
 
   const currentEmployee = employee ?? employees[0] ?? null;
   const visibleEmployee = selectedEmployeeId
@@ -389,6 +393,7 @@ export default function AttendancePage() {
   }, [employees, records, today, leaveRequests, organizationAllRows]);
 
   const titleEmployee = targetEmployee ?? currentEmployee;
+  const approvalMessage = approvalAction?.action === 'approve' ? 'Are you sure you want to approve this record?' : 'Are you sure you want to reject this record?';
 
   if (loading) return <div className="p-6 text-sm" style={{ color: 'var(--text-secondary)' }}>Loading attendance…</div>;
   if (error) return <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>;
@@ -860,7 +865,7 @@ export default function AttendancePage() {
                         {session.check_in ?? '—'} → {session.check_out ?? '—'}
                       </div>
                       {isManual && <div className="mt-2 border-t pt-2 text-xs" style={{ borderColor: 'rgba(255,255,255,0.35)' }}><strong>Manual reason:</strong> {session.manual_entry_reason ?? 'Reason unavailable'}</div>}
-                      {isManual && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"><span><strong>Approval:</strong> {approvalLabel}{session.approved_by ? ` by ${session.approved_by}` : session.rejected_by ? ` by ${session.rejected_by}` : ''}{session.approved_at ? ` · ${new Date(session.approved_at).toLocaleString()}` : session.rejected_at ? ` · ${new Date(session.rejected_at).toLocaleString()}` : ''}</span>{isHRAdmin && isPending && <span className="flex gap-2"><button onClick={() => approveRecord(session.id)} className="border px-2 py-1 font-medium" style={{ borderColor: 'rgba(255,255,255,0.7)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Approve</button><button onClick={() => rejectRecord(session.id)} className="border px-2 py-1 font-medium" style={{ borderColor: '#FCA5A5', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Reject</button></span>}</div>}
+                      {isManual && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"><span><strong>Approval:</strong> {approvalLabel}{session.approved_by ? ` by ${session.approved_by}` : session.rejected_by ? ` by ${session.rejected_by}` : ''}{session.approved_at ? ` · ${new Date(session.approved_at).toLocaleString()}` : session.rejected_at ? ` · ${new Date(session.rejected_at).toLocaleString()}` : ''}</span>{isHRAdmin && isPending && <span className="flex gap-2"><button type="button" onClick={() => setApprovalAction({ id: session.id, action: 'approve' })} className="border px-2 py-1 font-medium" style={{ borderColor: 'rgba(255,255,255,0.7)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Approve</button><button type="button" onClick={() => setApprovalAction({ id: session.id, action: 'reject' })} className="border px-2 py-1 font-medium" style={{ borderColor: '#FCA5A5', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Reject</button></span>}</div>}
                     </div>;
                   })
                 )}
@@ -951,6 +956,7 @@ export default function AttendancePage() {
           </div>
         </div>
       )}
+      <ConfirmDialog open={approvalAction !== null} message={approvalMessage} onCancel={() => setApprovalAction(null)} onConfirm={() => { if (approvalAction?.action === 'approve') approveRecord(approvalAction.id); if (approvalAction?.action === 'reject') rejectRecord(approvalAction.id); setApprovalAction(null); }} />
     </div>
   );
 }

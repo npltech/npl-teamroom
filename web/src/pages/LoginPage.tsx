@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,7 +110,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 flex flex-col justify-between p-14">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--text-on-ink-muted)' }}>
-              Today — Tue 12 Aug
+              Today — {todayLabel}
             </p>
             <h2 className="font-display mt-3 max-w-xs text-3xl font-medium leading-snug" style={{ color: 'var(--text-on-ink)' }}>
               Every check-in, request, and approval — one register.

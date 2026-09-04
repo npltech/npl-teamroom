@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useUsers, type UserStatus } from '../data/users';
 import { usePermissions, MODULES } from '../data/permissions';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -21,6 +22,7 @@ export default function UsersPage() {
     const [tab, setTab] = useState<'users' | 'permissions'>('users');
     const [showInviteForm, setShowInviteForm] = useState(false);
     const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'EMPLOYEE' as Role, employee_id: '' });
+    const [removeId, setRemoveId] = useState<string | null>(null);
 
     function handleInvite(e: React.FormEvent) {
         e.preventDefault();
@@ -194,7 +196,7 @@ export default function UsersPage() {
                                             {canManage && (
                                                 <td className="px-6 py-4 text-right">
                                                     <button
-                                                        onClick={() => removeUser(u.id)}
+                                                        onClick={() => setRemoveId(u.id)}
                                                         className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                                                         style={{ color: 'var(--status-absent)' }}
                                                     >
@@ -210,6 +212,8 @@ export default function UsersPage() {
                     )}
                 </div>
             )}
+
+            <ConfirmDialog open={removeId !== null} message="Are you sure you want to remove this record?" onCancel={() => setRemoveId(null)} onConfirm={() => { if (removeId) removeUser(removeId); setRemoveId(null); }} />
 
             {/* Permissions Tab */}
             {tab === 'permissions' && (

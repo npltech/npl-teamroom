@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useCompanyDocuments, type CompanyDocCategory } from '../data/companyDocuments';
 import { Drawer } from '../components/Drawer';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -23,6 +24,7 @@ export default function DocumentsPage() {
   const [dragActive, setDragActive] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [removeId, setRemoveId] = useState<string | null>(null);
 
   const filtered = filter === 'ALL' ? documents : documents.filter((d) => d.category === filter);
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
@@ -205,7 +207,7 @@ export default function DocumentsPage() {
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleRemove(d.id);
+                        setRemoveId(d.id);
                       }}
                       className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                       style={{ color: 'var(--status-absent)' }}
@@ -416,6 +418,7 @@ export default function DocumentsPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog open={removeId !== null} message="Are you sure you want to remove this record?" onCancel={() => setRemoveId(null)} onConfirm={() => { if (removeId) void handleRemove(removeId); setRemoveId(null); }} />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useEmployees } from '../data/employees';
 import { formatHolidayDate, getComputedEmployeeEvents, resolveEventImage, stripMarkdown, useHolidays, type HolidayCategory } from '../data/holidays';
 import type { Role } from '../data/roles';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 type Ctx = { role: Role };
 type FilterKey = 'ALL' | 'Holiday' | 'Announcement' | 'Birthday' | 'Anniversary';
@@ -55,6 +56,7 @@ export default function HolidaysPage() {
   const [messageDraft, setMessageDraft] = useState('');
   const [messageError, setMessageError] = useState('');
   const [filter, setFilter] = useState<FilterKey>('ALL');
+  const [removeId, setRemoveId] = useState<string | null>(null);
 
   function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -272,7 +274,7 @@ export default function HolidaysPage() {
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            removeHoliday(row.id);
+                            setRemoveId(row.id);
                           }}
                           className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                           style={{ color: 'var(--status-absent)' }}
@@ -446,6 +448,7 @@ export default function HolidaysPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog open={removeId !== null} message="Are you sure you want to remove this record?" onCancel={() => setRemoveId(null)} onConfirm={() => { if (removeId) removeHoliday(removeId); setRemoveId(null); }} />
     </div>
   );
 }

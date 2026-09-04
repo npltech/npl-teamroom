@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useDesignations } from '../data/designations';
 import { useDepartments } from '../data/departments';
 import { useEmployees } from '../data/employees';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { Role } from '../data/roles';
 
 type Ctx = { role: Role };
@@ -17,6 +18,7 @@ export default function DesignationsPage() {
   const { employees } = useEmployees();
   const [name, setName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [removeId, setRemoveId] = useState<string | null>(null);
 
   const countFor = (id: string) => employees.filter((e) => e.designation_id === id).length;
 
@@ -68,7 +70,7 @@ export default function DesignationsPage() {
                 </span>
                 {canManage && (
                   <button
-                    onClick={() => removeDesignation(d.id)}
+                    onClick={() => setRemoveId(d.id)}
                     className="font-mono text-[11px] uppercase tracking-wide hover:underline"
                     style={{ color: 'var(--status-absent)' }}
                   >
@@ -132,6 +134,7 @@ export default function DesignationsPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog open={removeId !== null} message="Are you sure you want to remove this record?" onCancel={() => setRemoveId(null)} onConfirm={() => { if (removeId) removeDesignation(removeId); setRemoveId(null); }} />
     </div>
   );
 }
