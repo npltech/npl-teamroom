@@ -12,6 +12,9 @@ import { countHolidaysThisYear, useHolidays } from '../data/holidays';
 import { supabase } from '../lib/supabase';
 import { useCurrentEmployee } from '../data/currentUser';
 import { useTasks } from '../data/tasks';
+import { useAttendance } from '../data/attendance';
+import { leaveDayCount, useLeaveRequests } from '../data/leave';
+import { useAuth } from '../contexts/AuthContext';
 
 type Ctx = { role: Role };
 
@@ -69,18 +72,78 @@ function SuperAdminDashboard() {
   );
 }
 
+type HrOnboardingRow = { id: string; candidate_id: string | null; candidate_name: string | null; department: string | null; current_step: string | null; status: string | null };
+
+function isMissingTableError(error: { code?: string; message?: string } | null) {
+  return error?.code === '42P01' || error?.code === 'PGRST205' || error?.message?.toLowerCase().includes('does not exist') || false;
+}
+
+function useHrRecruitmentData() {
+  const [data, setData] = useState({ openJobs: 0, candidates: 0, onboarding: [] as HrOnboardingRow[] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      const [jobsResult, candidatesResult, onboardingResult] = await Promise.all([
+        supabase.from('job_openings').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+        supabase.from('candidates').select('id', { count: 'exact', head: true }),
+        supabase.from('onboarding_records').select('id, candidate_id, candidate_name, department, current_step, status').in('status', ['pending', 'in_progress', 'PENDING', 'IN_PROGRESS']),
+      ]);
+      const errors = [jobsResult.error, candidatesResult.error, onboardingResult.error];
+      const unexpected = errors.find((item) => item && !isMissingTableError(item));
+      if (unexpected) setError(unexpected.message);
+      setData({
+        openJobs: isMissingTableError(jobsResult.error) ? 0 : jobsResult.count ?? 0,
+        candidates: isMissingTableError(candidatesResult.error) ? 0 : candidatesResult.count ?? 0,
+        onboarding: isMissingTableError(onboardingResult.error) ? [] : (onboardingResult.data ?? []) as HrOnboardingRow[],
+      });
+      setLoading(false);
+    }
+    void load();
+  }, []);
+
+  return { ...data, loading, error };
+}
+
 function HRDashboard() {
   const navigate = useNavigate();
-  const { employees } = useEmployees();
-  const { holidays } = useHolidays();
+  const { employees, loading: employeesLoading, error: employeesError } = useEmployees();
+  const { holidays, loading: holidaysLoading, error: holidaysError } = useHolidays();
+  const { records, loading: attendanceLoading, error: attendanceError } = useAttendance();
+  const { requests, loading: leaveLoading, error: leaveError } = useLeaveRequests();
+  const recruitment = useHrRecruitmentData();
+  const today = new Date().toLocaleDateString('en-CA');
+  const year = new Date().getFullYear();
+  const month = new Date().getMonth();
+  const activeEmployees = employees.filter((employee) => employee.employment_status === 'ACTIVE');
+  const activeEmployeeIds = new Set(activeEmployees.map((employee) => employee.id));
+  const todayRecords = records.filter((record) => record.date === today && record.check_in && activeEmployeeIds.has(record.employee_id));
+  const leaveToday = requests.filter((request) => request.status === 'APPROVED' && request.start_date <= today && request.end_date >= today && activeEmployeeIds.has(request.employee_id));
+  const presentIds = new Set(todayRecords.map((record) => record.employee_id));
+  const leaveIds = new Set(leaveToday.map((request) => request.employee_id));
+  const presentCount = presentIds.size;
+  const onLeaveCount = [...leaveIds].filter((id) => !presentIds.has(id)).length;
+  const absentCount = Math.max(0, activeEmployees.length - presentCount - onLeaveCount);
+  const newJoiners = activeEmployees.filter((employee) => {
+    const joined = new Date(`${employee.joining_date}T00:00:00`);
+    return joined.getFullYear() === year && joined.getMonth() === month;
+  }).length;
+  const pendingLeaves = requests.filter((request) => request.status === 'PENDING');
+  const isLoading = employeesLoading || holidaysLoading || attendanceLoading || leaveLoading || recruitment.loading;
+  const error = employeesError || holidaysError || attendanceError || leaveError || recruitment.error;
+
+  if (isLoading) return <div className="space-y-4"><div className="h-24 animate-pulse border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }} /><div className="h-64 animate-pulse border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }} /></div>;
+  if (error) return <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">Could not load the HR dashboard: {error}</div>;
+
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard label="Employees" value={employees.length} status="present" />
-        <StatCard label="Open jobs" value={6} status="structure" />
-        <StatCard label="Candidates" value={34} status="pending" />
-        <StatCard label="New joiners (mtd)" value={5} status="present" />
-        <StatCard label="Holidays this year" value={countHolidaysThisYear(holidays)} status="pending" />
+        <StatCard label="Employees" value={activeEmployees.length} status="present" />
+        <StatCard label="Open jobs" value={recruitment.openJobs} status="structure" />
+        <StatCard label="Candidates" value={recruitment.candidates} status="pending" />
+        <StatCard label="New joiners (mtd)" value={newJoiners} status="present" />
+        <StatCard label="Holidays this year" value={holidays.filter((holiday) => holiday.date.startsWith(String(year))).length} status="pending" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
@@ -89,26 +152,22 @@ function HRDashboard() {
             <AttendanceDonut
               centerLabel="Employees"
               segments={[
-                { label: 'Present', value: 98, color: 'var(--status-present)' },
-                { label: 'On leave', value: 14, color: 'var(--status-pending)' },
-                { label: 'Absent', value: 6, color: 'var(--status-absent)' },
+                { label: 'Present', value: presentCount, color: 'var(--status-present)' },
+                { label: 'On leave', value: onLeaveCount, color: 'var(--status-pending)' },
+                { label: 'Absent', value: absentCount, color: 'var(--status-absent)' },
               ]}
             />
           </div>
         </LedgerPanel>
-        <UpcomingHolidays canManage employees={employees} />
+        <UpcomingHolidays canManage />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <LedgerPanel title="Onboarding in progress">
-          <LedgerRow primary="Priya Das" secondary="Design — offer letter sent" status="pending" />
-          <LedgerRow primary="Rohan Verma" secondary="Engineering — IT setup" status="pending" />
-          <LedgerRow primary="Sana Iqbal" secondary="Marketing — completed" status="present" />
+          {recruitment.onboarding.length === 0 ? <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>No onboarding records found.</p> : recruitment.onboarding.map((item) => <LedgerRow key={item.id} primary={item.candidate_name ?? 'Candidate unavailable'} secondary={`${item.department ?? 'Department unavailable'}${item.current_step ? ` — ${item.current_step}` : ''}`} status={item.status?.toLowerCase() === 'completed' ? 'present' : 'pending'} />)}
         </LedgerPanel>
         <LedgerPanel title="Leave requests">
-          <LedgerRow primary="Anita Rao" secondary="Sick leave · 2 days" meta="Pending" status="pending" onClick={() => navigate('/leave')} />
-          <LedgerRow primary="Vikram Joshi" secondary="Annual leave · 5 days" meta="Approved" status="present" onClick={() => navigate('/leave')} />
-          <LedgerRow primary="Farah Khan" secondary="Casual leave · 1 day" meta="Rejected" status="absent" onClick={() => navigate('/leave')} />
+          {pendingLeaves.length === 0 ? <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>No leave requests found.</p> : pendingLeaves.slice(0, 5).map((request) => <LedgerRow key={request.id} primary={employees.find((employee) => employee.id === request.employee_id)?.name ?? 'Employee unavailable'} secondary={`${request.type} · ${leaveDayCount(request)} ${leaveDayCount(request) === 1 ? 'day' : 'days'}`} meta="Pending" status="pending" onClick={() => navigate('/leave')} />)}
         </LedgerPanel>
       </div>
     </>
@@ -117,14 +176,51 @@ function HRDashboard() {
 
 function ManagerDashboard() {
   const { employees } = useEmployees();
+  const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
+  const { records, loading: attendanceLoading, error: attendanceError } = useAttendance();
+  const { requests, loading: leaveLoading, error: leaveError } = useLeaveRequests();
+  const { tasks, loading: tasksLoading, error: tasksError } = useTasks();
+  const { profile, loading: authLoading } = useAuth();
+  const today = new Date().toLocaleDateString('en-CA');
+  const managerId = profile?.employee_id ?? null;
+  const teamMembers = employees.filter((employee) => employee.employment_status === 'ACTIVE' && employee.manager_id === managerId);
+  const teamMemberIds = new Set(teamMembers.map((employee) => employee.id));
+  const todayRecords = records.filter((record) => record.date === today && teamMemberIds.has(record.employee_id));
+  const approvedLeave = requests.filter((request) => request.status === 'APPROVED' && request.start_date <= today && request.end_date >= today && teamMemberIds.has(request.employee_id));
+  const presentIds = new Set(todayRecords.filter((record) => record.check_in).map((record) => record.employee_id));
+  const leaveIds = new Set(approvedLeave.map((request) => request.employee_id));
+  const presentCount = presentIds.size;
+  const onLeaveCount = [...leaveIds].filter((id) => !presentIds.has(id)).length;
+  const absentCount = Math.max(0, teamMembers.length - presentCount - onLeaveCount);
+  const openTaskCount = tasks.filter((task) => teamMemberIds.has(task.assigned_to) && task.status !== 'COMPLETED').length;
+  const isLoading = authLoading || departmentsLoading || attendanceLoading || leaveLoading || tasksLoading;
+  const error = departmentsError || attendanceError || leaveError || tasksError;
+
+  if (isLoading) {
+    return <div className="space-y-4"><div className="h-24 animate-pulse border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }} /><div className="grid gap-6 lg:grid-cols-2"><div className="h-64 animate-pulse border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }} /><div className="h-64 animate-pulse border bg-white" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }} /></div></div>;
+  }
+
+  if (error) {
+    return <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">Could not load the manager dashboard: {error}</div>;
+  }
+
+  const teamRows = teamMembers.map((employee) => {
+    const employeeRecords = todayRecords.filter((record) => record.employee_id === employee.id).sort((a, b) => (a.check_in ?? '').localeCompare(b.check_in ?? ''));
+    const leave = approvedLeave.find((request) => request.employee_id === employee.id);
+    const firstRecord = employeeRecords.find((record) => record.check_in);
+    const status: 'present' | 'pending' | 'absent' = firstRecord ? 'present' : leave ? 'pending' : 'absent';
+    const department = departments.find((item) => item.id === employee.department_id)?.name ?? 'Department unavailable';
+    return { employee, leave, firstRecord, status, department };
+  });
+
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard label="Team members" value={12} status="structure" />
-        <StatCard label="Present" value={9} status="present" />
-        <StatCard label="Absent" value={1} status="absent" />
-        <StatCard label="On leave" value={2} status="pending" />
-        <StatCard label="Open tasks" value={7} status="structure" />
+        <StatCard label="Team members" value={teamMembers.length} status="structure" />
+        <StatCard label="Present" value={presentCount} status="present" />
+        <StatCard label="Absent" value={absentCount} status="absent" />
+        <StatCard label="On leave" value={onLeaveCount} status="pending" />
+        <StatCard label="Open tasks" value={openTaskCount} status="structure" />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
@@ -133,9 +229,9 @@ function ManagerDashboard() {
             <AttendanceDonut
               centerLabel="Team"
               segments={[
-                { label: 'Present', value: 9, color: 'var(--status-present)' },
-                { label: 'On leave', value: 2, color: 'var(--status-pending)' },
-                { label: 'Absent', value: 1, color: 'var(--status-absent)' },
+                { label: 'Present', value: presentCount, color: 'var(--status-present)' },
+                { label: 'On leave', value: onLeaveCount, color: 'var(--status-pending)' },
+                { label: 'Absent', value: absentCount, color: 'var(--status-absent)' },
               ]}
             />
           </div>
@@ -145,14 +241,15 @@ function ManagerDashboard() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <LedgerPanel title="Team — today">
-          <LedgerRow primary="Devika Shetty" secondary="Office" meta="09:04" status="present" />
-          <LedgerRow primary="Imran Qureshi" secondary="WFH" meta="09:21" status="present" />
-          <LedgerRow primary="Neha Bhatt" secondary="Annual leave" status="pending" />
-          <LedgerRow primary="Sameer Ali" secondary="No check-in" status="absent" />
+          {teamRows.length === 0 ? <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>No team members found.</p> : teamRows.map((row) => (
+            <LedgerRow key={row.employee.id} primary={row.employee.name} secondary={row.leave ? `${row.leave.type} leave` : row.firstRecord ? `${row.department} · ${row.firstRecord.work_mode}` : `${row.department} · No check-in`} meta={row.firstRecord?.check_in ?? undefined} status={row.status} />
+          ))}
         </LedgerPanel>
         <LedgerPanel title="Leave approvals">
-          <LedgerRow primary="Neha Bhatt" secondary="Annual · 3 days" meta="Awaiting" status="pending" />
-          <LedgerRow primary="Devika Shetty" secondary="Sick · 1 day" meta="Awaiting" status="pending" />
+          {requests.filter((request) => request.status === 'PENDING' && teamMemberIds.has(request.employee_id)).length === 0 ? <p className="px-5 py-6 text-sm" style={{ color: 'var(--text-muted)' }}>No pending leave approvals.</p> : requests.filter((request) => request.status === 'PENDING' && teamMemberIds.has(request.employee_id)).map((request) => {
+            const employee = teamMembers.find((item) => item.id === request.employee_id);
+            return <LedgerRow key={request.id} primary={employee?.name ?? 'Employee unavailable'} secondary={`${request.type} · ${leaveDayCount(request)} ${leaveDayCount(request) === 1 ? 'day' : 'days'}`} meta="Awaiting" status="pending" />;
+          })}
         </LedgerPanel>
       </div>
 

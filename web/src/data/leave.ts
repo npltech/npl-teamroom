@@ -28,17 +28,24 @@ export function leaveDayCount(r: Pick<LeaveRequest, 'start_date' | 'end_date'>):
 
 export function useLeaveRequests() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from('leave_requests')
       .select(SELECT_COLUMNS)
       .order('requested_at', { ascending: false });
     if (error) {
+      setError(error.message);
       console.error('[Leave] Could not load requests:', error);
+      setLoading(false);
       return;
     }
+    setError(null);
     setRequests((data ?? []) as LeaveRequest[]);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -87,5 +94,5 @@ export function useLeaveRequests() {
   const approve = useCallback((id: string) => decide(id, 'APPROVED'), [decide]);
   const reject = useCallback((id: string) => decide(id, 'REJECTED'), [decide]);
 
-  return { requests, requestLeave, approve, reject };
+  return { requests, requestLeave, approve, reject, loading, error, refresh };
 }

@@ -60,7 +60,7 @@ export default function AttendancePage() {
   const { departments } = useDepartments();
   const { holidays } = useHolidays();
   const { requests: leaveRequests } = useLeaveRequests();
-  const { records, checkIn, checkOut, addManualEntry, today, loading, error } = useAttendance();
+  const { records, checkIn, checkOut, addManualEntry, approveRecord, rejectRecord, today, loading, error } = useAttendance();
 
   const isHRAdmin = role === 'HR' || role === 'SUPER_ADMIN';
   const [viewMode, setViewMode] = useState<'my' | 'employee'>('my');
@@ -125,6 +125,13 @@ export default function AttendancePage() {
       return { iso, sessions, total: Number(total.toFixed(1)), status };
     }).sort((a, b) => a.iso.localeCompare(b.iso));
   }, [year, month, targetEmployee, targetSessions, holidaySet, leaveRequests]);
+
+  const monthlyAttendanceRows = useMemo<Array<{ day: (typeof monthlyAttendance)[number]; session: AttendanceRecord | null }>>(
+    () => monthlyAttendance.flatMap<{ day: (typeof monthlyAttendance)[number]; session: AttendanceRecord | null }>((day) => day.sessions.length > 0
+      ? day.sessions.map((session) => ({ day, session }))
+      : [{ day, session: null }]),
+    [monthlyAttendance],
+  );
 
   const selectedDaySessions = useMemo(() => {
     if (!targetEmployee) return [] as AttendanceRecord[];
@@ -758,44 +765,52 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <div className="min-w-[920px]">
-                    <div className="grid grid-cols-[24%_17%_17%_14%_28%] border-b px-4 py-3 sm:px-5" style={{ background: 'var(--paper)', borderColor: 'var(--line-soft)' }}>
+                  <div className="min-w-[1180px]">
+                    <div className="grid grid-cols-[18%_12%_12%_16%_11%_13%_18%] border-b px-4 py-3 sm:px-5" style={{ background: 'var(--paper)', borderColor: 'var(--line-soft)' }}>
                       <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Date</span>
                       <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check In</span>
                       <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Check Out</span>
                       <span className="text-right font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Hours</span>
-                      <span className="font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Manual Entry Reason</span>
+                      <span className="pl-5 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Overtime</span>
+                      <span className="pl-5 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Approval Status</span>
+                      <span className="pl-5 font-mono text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>Manual Entry Reason</span>
                     </div>
-                    {monthlyAttendance.map((day) => {
+                    {monthlyAttendanceRows.map(({ day, session }) => {
                       const isSelected = selectedDate === day.iso;
                       const isToday = day.iso === today;
                       const statusColor = day.status === 'holiday' ? '#8B5CF6' : day.status === 'leave' ? '#F59E0B' : day.status === 'present' ? '#22C55E' : 'var(--status-absent)';
-                      const rowBackground = day.sessions.some((session) => session.is_manual_entry) ? '#DC2626' : day.status === 'present' ? '#F0FDF4' : day.status === 'absent' ? '#FFF1F2' : day.status === 'holiday' ? '#F5F3FF' : '#FFFBEB';
+                      const isManual = session?.is_manual_entry ?? false;
+                      const isApprovedManual = isManual && session?.manual_approval_status === 'approved';
+                      const rowBackground = isApprovedManual ? '#DCFCE7' : isManual ? '#DC2626' : day.status === 'present' ? '#F0FDF4' : day.status === 'absent' ? '#FFF1F2' : day.status === 'holiday' ? '#F5F3FF' : '#FFFBEB';
                       const rowAccent = day.status === 'present' ? '#22C55E' : day.status === 'absent' ? '#EF4444' : statusColor;
-                      const firstSession = day.sessions[0];
-                      const lastSession = day.sessions[day.sessions.length - 1];
-                      const manualReason = day.sessions.find((session) => session.is_manual_entry && session.manual_entry_reason)?.manual_entry_reason ?? null;
+                      const manualReason = session?.manual_entry_reason ?? null;
 
                       return (
                         <button
-                          key={day.iso}
+                          key={`${day.iso}-${session?.id ?? 'empty'}`}
                           onClick={() => setSelectedDate(day.iso)}
-                          className="grid w-full grid-cols-[24%_17%_17%_14%_28%] items-center border-t px-4 py-3.5 text-left transition-colors hover:bg-[var(--paper)] sm:px-5"
+                          className="grid w-full grid-cols-[18%_12%_12%_16%_11%_13%_18%] items-center border-t px-4 py-3.5 text-left transition-colors hover:bg-[var(--paper)] sm:px-5"
                           style={{ borderColor: 'var(--line-soft)', background: rowBackground, borderLeft: isSelected || isToday ? `3px solid ${rowAccent}` : '3px solid transparent' }}
                         >
-                          <span className="text-sm font-semibold" style={{ color: day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)' }}>
+                          <span className="text-sm font-semibold" style={{ color: isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)' }}>
                             {new Date(`${day.iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}{isToday && <span className="ml-2 inline-flex border px-1.5 py-0.5 align-middle font-mono text-[9px] font-semibold tracking-wide" style={{ borderColor: '#60A5FA', color: '#2563EB', borderRadius: 'var(--radius-sm)' }}>TODAY</span>}
                           </span>
-                          <span className="font-mono text-xs" style={{ color: firstSession?.check_in ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--text-secondary)') : 'var(--text-muted)' }}>
-                            {firstSession?.check_in ?? '—'}
+                          <span className="font-mono text-xs" style={{ color: session?.check_in ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>
+                            {session?.check_in ?? '—'}
                           </span>
-                          <span className="font-mono text-xs" style={{ color: lastSession?.check_out ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--text-secondary)') : 'var(--text-muted)' }}>
-                            {lastSession?.check_out ?? '—'}
+                          <span className="font-mono text-xs" style={{ color: session?.check_out ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>
+                            {session?.check_out ?? '—'}
                           </span>
-                          <span className="text-right font-mono text-xs font-medium tabular-nums" style={{ color: day.total > 0 ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)') : 'var(--text-muted)' }}>
-                            {day.total > 0 ? `${day.total.toFixed(1)}h` : '—'}
+                          <span className="text-right font-mono text-xs font-medium tabular-nums" style={{ color: session ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)') : 'var(--text-muted)' }}>
+                            {session ? `${(hoursBetween(session.check_in, session.check_out) ?? 0).toFixed(1)}h (day ${day.total.toFixed(1)}h)` : '—'}
                           </span>
-                          <span className="max-w-0 truncate text-xs" style={{ color: manualReason ? (day.sessions.some((session) => session.is_manual_entry) ? '#fff' : 'var(--ink)') : 'var(--text-muted)' }} title={manualReason ?? undefined}>
+                          <span className="pl-5 font-mono text-xs" style={{ color: session ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>
+                            {session ? `${(session.overtime_minutes / 60).toFixed(1)}h` : '—'}
+                          </span>
+                          <span className="pl-5 text-xs font-semibold" style={{ color: isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-muted)' }}>
+                            {isManual ? `${session?.manual_approval_status?.charAt(0).toUpperCase()}${session?.manual_approval_status?.slice(1)}` : '—'}
+                          </span>
+                          <span className="max-w-0 truncate pl-5 text-xs" style={{ color: manualReason ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)') : 'var(--text-muted)' }} title={manualReason ?? undefined}>
                             {manualReason ?? '—'}
                           </span>
                         </button>
@@ -823,26 +838,31 @@ export default function AttendancePage() {
                     No sessions logged for this day.
                   </div>
                 ) : (
-                  selectedDaySessions.map((session, index) => (
-                    <div key={session.id} className="rounded-md border p-3" style={{ borderColor: 'var(--line-soft)', background: 'var(--paper)' }}>
+                  selectedDaySessions.map((session, index) => {
+                    const isManual = session.is_manual_entry;
+                    const isPending = isManual && session.manual_approval_status === 'pending';
+                    const approvalLabel = session.manual_approval_status.charAt(0).toUpperCase() + session.manual_approval_status.slice(1);
+                    return <div key={session.id} className="rounded-md border p-3" style={{ borderColor: isManual ? '#DC2626' : 'var(--line-soft)', background: isManual ? '#DC2626' : 'var(--paper)', color: isManual ? '#fff' : 'var(--ink)' }}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold" style={{ background: 'var(--accent-structure-bg)', color: 'var(--accent-structure)' }}>
+                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold" style={{ background: isManual ? 'rgba(255,255,255,0.2)' : 'var(--accent-structure-bg)', color: isManual ? '#fff' : 'var(--accent-structure)' }}>
                             {index + 1}
                           </span>
                           <span className="text-xs font-medium uppercase tracking-[0.14em]" style={{ color: 'var(--text-secondary)' }}>
                             {session.work_mode}
                           </span>
                         </div>
-                        <span className="font-mono text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                        <span className="font-mono text-[10px]" style={{ color: isManual ? '#fff' : 'var(--text-secondary)' }}>
                           {hoursBetween(session.check_in, session.check_out)?.toFixed(1) ?? '0.0'}h
                         </span>
                       </div>
-                      <div className="mt-3 font-mono text-sm" style={{ color: 'var(--ink)' }}>
+                      <div className="mt-3 font-mono text-sm" style={{ color: isManual ? '#fff' : 'var(--ink)' }}>
                         {session.check_in ?? '—'} → {session.check_out ?? '—'}
                       </div>
-                    </div>
-                  ))
+                      {isManual && <div className="mt-2 border-t pt-2 text-xs" style={{ borderColor: 'rgba(255,255,255,0.35)' }}><strong>Manual reason:</strong> {session.manual_entry_reason ?? 'Reason unavailable'}</div>}
+                      {isManual && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"><span><strong>Approval:</strong> {approvalLabel}{session.approved_by ? ` by ${session.approved_by}` : session.rejected_by ? ` by ${session.rejected_by}` : ''}{session.approved_at ? ` · ${new Date(session.approved_at).toLocaleString()}` : session.rejected_at ? ` · ${new Date(session.rejected_at).toLocaleString()}` : ''}</span>{isHRAdmin && isPending && <span className="flex gap-2"><button onClick={() => approveRecord(session.id)} className="border px-2 py-1 font-medium" style={{ borderColor: 'rgba(255,255,255,0.7)', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Approve</button><button onClick={() => rejectRecord(session.id)} className="border px-2 py-1 font-medium" style={{ borderColor: '#FCA5A5', color: '#fff', borderRadius: 'var(--radius-sm)' }}>Reject</button></span>}</div>}
+                    </div>;
+                  })
                 )}
               </div>
 

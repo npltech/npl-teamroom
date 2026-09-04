@@ -140,17 +140,24 @@ export function stripMarkdown(text: string): string {
 
 export function useHolidays() {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from('holidays')
       .select('id, date, name, category, description, image')
       .order('date', { ascending: true });
     if (error) {
+      setError(error.message);
       console.error('[Holidays] Could not load holidays:', error);
+      setLoading(false);
       return;
     }
+    setError(null);
     setHolidays((data ?? []) as Holiday[]);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -193,7 +200,7 @@ export function useHolidays() {
     setHolidays((prev) => prev.filter((holiday) => holiday.id !== id));
   }, []);
 
-  return { holidays: [...holidays].sort((a, b) => a.date.localeCompare(b.date)), addHoliday, updateHoliday, removeHoliday };
+  return { holidays: [...holidays].sort((a, b) => a.date.localeCompare(b.date)), addHoliday, updateHoliday, removeHoliday, loading, error, refresh };
 }
 
 export function upcomingHolidays(holidays: Holiday[], from = new Date(), limit = 4): Holiday[] {

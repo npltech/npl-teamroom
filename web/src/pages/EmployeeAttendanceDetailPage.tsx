@@ -116,6 +116,7 @@ export default function EmployeeAttendanceDetailPage() {
     }, [superAdminDays, today]);
 
     const selectedSuperDay = superAdminDays.find((day) => day.date === selectedDate) ?? superAdminDays[0];
+    const superAdminRows = superAdminDays.flatMap<{ day: (typeof superAdminDays)[number]; session: AttendanceRecord | null }>((day) => day.sessions.length > 0 ? day.sessions.map((session) => ({ day, session })) : [{ day, session: null }]);
     const selectedAudit = audit.filter((entry) => selectedSuperDay?.sessions.some((session) => session.id === entry.record_id));
     const todayRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -212,27 +213,26 @@ export default function EmployeeAttendanceDetailPage() {
                     <div className="overflow-hidden border bg-white shadow-sm" style={{ borderColor: 'var(--line-soft)', borderRadius: 'var(--radius-md)' }}>
                         <div className="border-b px-5 py-3.5" style={{ borderColor: 'var(--line-soft)' }}><h2 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Monthly attendance</h2></div>
                         <div className="max-h-[620px] overflow-y-auto">
-                            <table className="w-full min-w-[900px] table-fixed text-left" style={{ borderCollapse: 'collapse' }}>
-                                <colgroup><col className="w-[23%]" /><col className="w-[14%]" /><col className="w-[14%]" /><col className="w-[12%]" /><col className="w-[17%]" /><col className="w-[20%]" /></colgroup>
+                            <table className="w-full min-w-[1180px] table-fixed text-left" style={{ borderCollapse: 'collapse' }}>
+                                <colgroup><col className="w-[17%]" /><col className="w-[11%]" /><col className="w-[11%]" /><col className="w-[15%]" /><col className="w-[11%]" /><col className="w-[13%]" /><col className="w-[22%]" /></colgroup>
                                 <thead className="sticky top-0 z-10" style={{ background: 'var(--paper)' }}>
                                     <tr>
-                                        {['Date', 'Check In', 'Check Out', 'Hours', 'Status', 'Manual Entry Reason'].map((heading) => <th key={heading} className={`px-5 py-3 font-mono text-[10px] uppercase tracking-wide ${heading === 'Hours' ? 'text-right' : ''}`} style={{ color: 'var(--text-secondary)' }}>{heading}</th>)}
+                                        {['Date', 'Check In', 'Check Out', 'Hours', 'Overtime', 'Approval Status', 'Manual Entry Reason'].map((heading) => <th key={heading} className={`px-5 py-3 font-mono text-[10px] uppercase tracking-wide ${heading === 'Hours' ? 'text-right' : ''} ${heading === 'Overtime' || heading === 'Approval Status' || heading === 'Manual Entry Reason' ? 'pl-5' : ''}`} style={{ color: 'var(--text-secondary)' }}>{heading}</th>)}
                                     </tr>
                                 </thead>
-                                <tbody>{superAdminDays.map((day, index) => {
+                                <tbody>{superAdminRows.map(({ day, session }, index) => {
                                     const isToday = day.date === today;
-                                    const statusColor = day.status === 'PRESENT' ? 'var(--status-present)' : day.status === 'LEAVE' ? '#B45309' : day.status === 'HOLIDAY' ? '#7C3AED' : day.status === 'ABSENT' ? 'var(--status-absent)' : 'var(--text-muted)';
-                                    const statusBackground = day.status === 'PRESENT' ? '#ECFDF5' : day.status === 'LEAVE' ? '#FFFBEB' : day.status === 'HOLIDAY' ? '#F5F3FF' : day.status === 'ABSENT' ? '#FEF2F2' : 'var(--status-neutral-bg)';
                                     const isWorkingDay = day.status === 'PRESENT' || day.status === 'LEAVE';
-                                    const firstSession = day.sessions[0];
-                                    const lastSession = day.sessions[day.sessions.length - 1];
-                                    return <tr key={day.date} ref={isToday ? todayRowRef : undefined} onClick={() => setSelectedDate(day.date)} className="cursor-pointer border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)', background: selectedSuperDay?.date === day.date ? 'rgba(100, 116, 139, 0.08)' : index % 2 === 0 ? '#fff' : 'var(--paper)', borderLeft: isToday ? '3px solid #60A5FA' : '3px solid transparent' }}>
-                                        <td className="px-5 py-3.5 text-sm font-semibold" style={{ color: 'var(--ink)' }}>{new Date(`${day.date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}{isToday && <span className="ml-2 inline-flex border px-1.5 py-0.5 align-middle font-mono text-[9px] font-semibold tracking-wide" style={{ borderColor: '#60A5FA', color: '#2563EB', borderRadius: 'var(--radius-sm)' }}>TODAY</span>}</td>
-                                        <td className="px-5 py-3.5 font-mono text-xs" style={{ color: firstSession?.check_in ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{firstSession?.check_in ?? '—'}</td>
-                                        <td className="px-5 py-3.5 font-mono text-xs" style={{ color: lastSession?.check_out ? 'var(--text-secondary)' : 'var(--text-muted)' }}>{lastSession?.check_out ?? '—'}</td>
-                                        <td className="px-5 py-3.5 text-right font-mono text-xs font-medium tabular-nums" style={{ color: isWorkingDay && day.total > 0 ? 'var(--ink)' : 'var(--text-muted)' }}>{isWorkingDay && day.total > 0 ? formatDuration(Math.round(day.total)) : '—'}</td>
-                                        <td className="px-5 py-3.5"><span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: statusColor, background: statusBackground }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />{day.status}</span></td>
-                                        <td className="max-w-0 truncate px-5 py-3.5 text-xs" style={{ color: day.manualReason ? 'var(--ink)' : 'var(--text-muted)' }} title={day.manualReason ?? undefined}>{day.manualReason ?? '—'}</td>
+                                    const isManual = session?.is_manual_entry ?? false;
+                                    const isApprovedManual = isManual && session?.manual_approval_status === 'approved';
+                                    return <tr key={`${day.date}-${session?.id ?? 'empty'}`} ref={isToday && !session ? todayRowRef : undefined} onClick={() => setSelectedDate(day.date)} className="cursor-pointer border-t transition-colors hover:bg-[var(--paper)]" style={{ borderColor: 'var(--line-soft)', background: isApprovedManual ? '#DCFCE7' : isManual ? '#DC2626' : selectedSuperDay?.date === day.date ? 'rgba(100, 116, 139, 0.08)' : index % 2 === 0 ? '#fff' : 'var(--paper)', color: isManual ? (isApprovedManual ? '#166534' : '#fff') : 'inherit', borderLeft: isToday ? '3px solid #60A5FA' : '3px solid transparent' }}>
+                                        <td className="px-5 py-3.5 text-sm font-semibold" style={{ color: isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)' }}>{new Date(`${day.date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}{isToday && <span className="ml-2 inline-flex border px-1.5 py-0.5 align-middle font-mono text-[9px] font-semibold tracking-wide" style={{ borderColor: '#60A5FA', color: '#2563EB', borderRadius: 'var(--radius-sm)' }}>TODAY</span>}</td>
+                                        <td className="px-5 py-3.5 font-mono text-xs" style={{ color: session?.check_in ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>{session?.check_in ?? '—'}</td>
+                                        <td className="px-5 py-3.5 font-mono text-xs" style={{ color: session?.check_out ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>{session?.check_out ?? '—'}</td>
+                                        <td className="px-5 py-3.5 text-right font-mono text-xs font-medium tabular-nums" style={{ color: session ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)') : 'var(--text-muted)' }}>{session ? `${formatDuration(sessionMinutes(session))} (day ${formatDuration(day.total)})` : isWorkingDay && day.total > 0 ? formatDuration(Math.round(day.total)) : '—'}</td>
+                                        <td className="pl-5 pr-5 py-3.5 font-mono text-xs" style={{ color: session ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-secondary)') : 'var(--text-muted)' }}>{session ? `${(session.overtime_minutes / 60).toFixed(1)}h` : '—'}</td>
+                                        <td className="pl-5 pr-5 py-3.5 text-xs font-semibold" style={{ color: isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--text-muted)' }}>{isManual ? `${session?.manual_approval_status?.charAt(0).toUpperCase()}${session?.manual_approval_status?.slice(1)}` : '—'}</td>
+                                        <td className="max-w-0 truncate pl-5 pr-5 py-3.5 text-xs" style={{ color: session?.manual_entry_reason ? (isManual ? (isApprovedManual ? '#166534' : '#fff') : 'var(--ink)') : 'var(--text-muted)' }} title={session?.manual_entry_reason ?? undefined}>{session?.manual_entry_reason ?? '—'}</td>
                                     </tr>;
                                 })}</tbody>
                             </table>
